@@ -1,0 +1,21 @@
+-- Generado desde supabase/seed/homologacion_canal.csv (S2). Regenerar si cambia el CSV.
+insert into ventas.homologacion (dimension, valor_origen, valor_homologado, revisar) values
+  ('canal', 'Detalle', 'Detalle', false),
+  ('canal', 'Mayoreo', 'Mayoreo', false),
+  ('canal', 'Moderno', 'Moderno', false),
+  ('canal', 'Institucional', 'Institucional', false),
+  ('canal', 'Gobierno', 'Gobierno', false),
+  ('canal', 'DETALLE', 'Detalle', false),
+  ('canal', 'Exportacion', 'Exportación', false),
+  ('canal', 'Exportación', 'Exportación', false),
+  ('canal', 'Institucionales', 'Institucional', true),
+  ('canal', '', 'Sin canal', true),
+  ('canal', 'OMEZA', 'Moderno', true),
+  ('canal', 'Venta para Exportación', 'Exportación', true),
+  ('canal', 'Mayoristas', 'Mayoreo', true),
+  ('canal', 'B2C', 'Detalle', true),
+  ('canal', 'GOBIERNO', 'Gobierno', false),
+  ('canal', 'EXPORTACION', 'Exportación', false),
+  ('canal', 'INSTITUCIONAL', 'Institucional', false),
+  ('canal', 'detalle', 'Detalle', false)
+on conflict (dimension, valor_origen) do update set valor_homologado = excluded.valor_homologado, revisar = excluded.revisar;

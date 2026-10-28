@@ -4,7 +4,8 @@
  * Requiere SUPABASE_SERVICE_ROLE_KEY. Lee en streaming (ExcelJS), normaliza y sube en lotes.
  * Reglas (SUPUESTOS.md): S2 homologación, S3 flags sin corregir, S9 serial Excel → fecha, códigos a texto.
  */
-import "dotenv/config";
+import { config } from "dotenv";
+config({ path: [".env.local", ".env"], quiet: true });
 import ExcelJS from "exceljs";
 import { createHash } from "node:crypto";
 import { createReadStream, readFileSync, statSync } from "node:fs";
@@ -66,7 +67,7 @@ async function main() {
     if (cargadas % 50000 === 0) console.log("cargadas", cargadas);
   };
 
-  const wb = new ExcelJS.stream.xlsx.WorkbookReader(XLSX, { entries: "emit", sharedStrings: "cache", worksheets: "emit" });
+  const wb = new ExcelJS.stream.xlsx.WorkbookReader(XLSX, { entries: "emit", sharedStrings: "cache", styles: "cache", worksheets: "emit" }); // sin styles: "cache" toda fecha llega como número y S9 marcaría todas las filas
   for await (const ws of wb) {
     // @ts-expect-error name existe en el reader de streaming
     const hoja: string = ws.name;

@@ -78,3 +78,8 @@ alter table ventas.publicacion enable row level security;
 alter table ventas.homologacion enable row level security;
 alter table public.perfil enable row level security;
 -- Políticas RLS: 0003_rls.sql (G5). Hasta entonces solo service_role accede.
+-- Un esquema propio no hereda los privilegios por defecto que Supabase da en public.
+grant all on all tables in schema ventas to service_role;
+grant all on all sequences in schema ventas to service_role;
+alter default privileges in schema ventas grant all on tables to service_role;
+alter default privileges in schema ventas grant all on sequences to service_role;
