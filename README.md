@@ -1,36 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# BIA Foresight
 
-## Getting Started
+Plataforma privada de inteligencia comercial para BIA Honduras (piloto Marketing y Ventas): ventas internas del cubo → dashboard + asistente con evidencia, con perfiles Estándar/Plus.
 
-First, run the development server:
+Stack: Next.js (App Router, TS) · Tailwind · Supabase (Postgres, Storage, Auth) · OpenRouter · Resend · Vercel.
 
-```bash
+## Arranque
+
+```sh
+cp .env.example .env.local        # llenar con el proyecto Supabase de desarrollo
+npm install
+npx shadcn@latest init             # UI: preferencia shadcn/ui (no se pudo instalar en el scaffold inicial)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Base de datos: aplicar `supabase/migrations/*.sql` en orden (Supabase CLI `supabase db push` o SQL editor) y cargar `supabase/seed/homologacion_canal.csv` en `ventas.homologacion`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Ingesta del histórico (G2):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```sh
+XLSX_PATH="…/Data Historica.xlsx" npm run ingest
+PARITY_DIR="…/marketing/analisis" PARITY_CARGA_ID=<uuid> npm test   # paridad con el perfil en pandas
+```
 
-## Learn More
+## Estructura
 
-To learn more about Next.js, take a look at the following resources:
+- `docs/GOALS.md` · `docs/SUPUESTOS.md` · `docs/backlog.md` — qué, con qué supuestos y en qué orden.
+- `supabase/migrations/0001_init.sql` — cargas, publicaciones versionadas, homologación, hechos (24 campos + flags), perfiles.
+- `supabase/migrations/0002_funciones.sql` — **único punto de cálculo**: `kpi_periodo`, `variacion_por_dimension`, `serie_mensual`, `control_mensual`.
+- `src/lib/semantic/` — contrato tipado (zod) que usan dashboard, asistente y exportación.
+- `src/lib/supabase/` — clientes (usuario con RLS / servicio).
+- `src/app/` — Inicio (dashboard del prototipo), Asistente, Cargas y versiones, Conocimiento, Perfiles y accesos.
+- `scripts/ingest.ts` — XLSX → `ventas.hecho` en streaming, idempotente por SHA-256, con flags (duplicado, discrepancia, fecha serial).
+- `tests/parity.test.ts` — totales mensuales en DB == `analisis/totales_por_mes.csv`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Reglas que no se negocian
+- Importes en `numeric`; nunca redondear en JavaScript.
+- Dashboard, chat y exportación leen la misma versión publicada y las mismas funciones SQL.
+- Nunca "conciliado con BI" por coincidir con el Excel: requiere el reporte de BI.
+- `subgrupo` y datos de cliente no se envían al modelo de IA. Secretos solo en servidor.
