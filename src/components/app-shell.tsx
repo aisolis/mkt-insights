@@ -10,7 +10,7 @@ const NAV = [
   { href: "/perfiles", label: "Perfiles y accesos" },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, version }: { children: React.ReactNode; version: React.ReactNode }) {
   const path = usePathname();
   return (
     <div className="flex min-h-screen">
@@ -35,22 +35,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="flex-1">
         <header className="flex items-center justify-between border-b border-neutral-200 bg-white px-6 py-3 text-sm">
-          <VersionBadge />
+          {version}
+          {/* TODO G5: usuario y perfil de la sesión */}
           <div className="text-neutral-600">Perfil: <span className="font-medium">—</span></div>
         </header>
         <main className="p-6">{children}</main>
       </div>
-    </div>
-  );
-}
-
-/** Siempre visible: versión publicada, fecha de corte y estado de conciliación (prototipo p.1). */
-function VersionBadge() {
-  // TODO G2: leer de ventas.publicacion (última versión).
-  return (
-    <div className="flex items-center gap-2 text-neutral-600">
-      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Sin versión publicada</span>
-      <span>corte —</span>
     </div>
   );
 }

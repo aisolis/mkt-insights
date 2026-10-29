@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "ingest": "tsx scripts/ingest.ts",
+    "publicar": "tsx scripts/publicar.ts",
     "db:start": "supabase start",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",

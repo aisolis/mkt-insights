@@ -1,6 +1,6 @@
 /**
  * Paridad G2: totales por mes en Supabase == analisis/totales_por_mes.csv (perfil independiente en pandas).
- * Requiere PARITY_DIR y credenciales (PARITY_CARGA_ID opcional). Se omite si faltan.
+ * Requiere PARITY_DIR y credenciales (PARITY_CARGA_ID opcional; por defecto la última carga validada o publicada). Se omite si faltan.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -15,10 +15,10 @@ describe.skipIf(skip)("paridad mensual contra perfil pandas", () => {
     const csv = readFileSync(join(dir!, "totales_por_mes.csv"), "utf8").trim().split("\n").slice(1)
       .map((l) => { const [mes, filas, venta_neta, kg] = l.split(","); return { mes, filas: +filas, venta_neta: +venta_neta, kg: +kg }; });
     const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-    // Sin PARITY_CARGA_ID se verifica la última carga validada.
+    // Sin PARITY_CARGA_ID se verifica la última carga validada o publicada.
     let cargaId = process.env.PARITY_CARGA_ID;
     if (!cargaId) {
-      const { data: c, error: ec } = await sb.schema("ventas").from("carga").select("id").eq("estado", "validada").order("creado_en", { ascending: false }).limit(1).single();
+      const { data: c, error: ec } = await sb.schema("ventas").from("carga").select("id").in("estado", ["validada", "publicada"]).order("creado_en", { ascending: false }).limit(1).single();
       expect(ec).toBeNull();
       cargaId = c!.id as string;
     }

@@ -8,7 +8,7 @@ import { config } from "dotenv";
 config({ path: [".env.local", ".env"], quiet: true });
 import ExcelJS from "exceljs";
 import { createHash } from "node:crypto";
-import { createReadStream, readFileSync, statSync } from "node:fs";
+import { createReadStream, statSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 
 const XLSX = process.argv[2] ?? process.env.XLSX_PATH!;
