@@ -115,10 +115,18 @@ describe("herramientas", () => {
 });
 
 describe("verificador de cifras", () => {
-  it("acepta solo cifras presentes en las consultas", () => {
-    const ok = cifrasPermitidas([{ variacion: "−L 8.4 M", pct: "−6.9%" }, ["Venta neta L 140.2 M"]]);
-    expect(cifrasNoVerificadas("Cayó 6.9% (−L 8.4 M) en septiembre 2026, a L 140.2 M.", ok)).toEqual([]);
-    expect(cifrasNoVerificadas("Cayó 7.2%, unos L 8.35 M.", ok)).toEqual(["7.2", "8.35"]);
+  const ok = cifrasPermitidas([{ variacion: "−L 8.4 M", pct: "−6.9%", clientes: "15,867" }, ["Venta neta L 140.2 M"]]);
+
+  it("acepta cifras presentes en las consultas", () => {
+    expect(cifrasNoVerificadas("Cayó 6.9% (−L 8.4 M) en septiembre 2026, a L 140.2 M, con 15,867 clientes.", ok)).toEqual([]);
+  });
+
+  it("tolera redondeos en cualquier sentido", () => {
+    expect(cifrasNoVerificadas("Cayó cerca de 7% (unos L 8.35 M); la venta quedó en L 140 M.", ok)).toEqual([]);
+  });
+
+  it("rechaza cifras que no salen de ninguna consulta", () => {
+    expect(cifrasNoVerificadas("Cayó 7.2%, unos L 8.2 M, con 15,900 clientes.", ok)).toEqual(["7.2", "8.2", "15,900"]);
   });
 });
 

@@ -27,3 +27,18 @@ const consultas = crearConsultas(rpc);
 /** Una consulta por request (layout + página). */
 export const versionVigente = cache(consultas.versionVigente);
 export const { kpiPeriodo, variacionPorDimension, topContribuyentes, serieMensual, descomposicion } = consultas;
+
+export type FilaBitacora = {
+  version: number | null; contexto: string; pregunta: string; estado: "ok" | "fuera_de_alcance" | "sin_datos" | "error";
+  modo: "modelo" | "determinista" | null; modelo: string | null; texto: string | null; respuesta: unknown; error: string | null; duracion_ms: number;
+};
+
+/** Registra una pregunta del asistente (ventas.consulta_asistente). Si falla, no rompe la respuesta. */
+export async function registrarConsultaAsistente(fila: FilaBitacora) {
+  try {
+    const { error } = await clienteSinAuth().schema("ventas").from("consulta_asistente").insert(fila);
+    if (error) console.error("bitácora del asistente:", error.message);
+  } catch (e) {
+    console.error("bitácora del asistente:", e);
+  }
+}

@@ -44,7 +44,7 @@ export async function responder(pregunta: string, historial: Turno[], ctx: Conte
         return armar("modelo", texto, hips, elegidos.length ? elegidos : resultados, resultados, ctx, avisos);
       }
       // El modelo respondió sin consultar: no hay cifras que mostrar; si escribió alguna, no se muestra.
-      if (!cifrasNoVerificadas(salida.texto, new Set()).length && salida.texto)
+      if (!cifrasNoVerificadas(salida.texto, []).length && salida.texto)
         return armar("modelo", salida.texto, salida.hipotesis, [], [], ctx, []);
     } catch (e) {
       console.error("asistente: el modelo falló, se responde en modo determinista", e);

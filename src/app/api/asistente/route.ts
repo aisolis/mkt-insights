@@ -11,7 +11,7 @@ const Entrada = z.object({
   historial: z.array(z.object({ rol: z.enum(["usuario", "asistente"]), texto: z.string().max(2000) })).max(12).default([]),
 });
 
-/** Pregunta al asistente sobre la versión publicada. Responde siempre con evidencia (src/lib/asistente). */
+/** Pregunta al asistente sobre la versión publicada. Responde siempre con evidencia y queda en la bitácora. */
 export async function POST(request: Request) {
   const entrada = Entrada.safeParse(await request.json().catch(() => null));
   if (!entrada.success) return Response.json({ error: "Pregunta inválida" }, { status: 400 });
@@ -21,6 +21,19 @@ export async function POST(request: Request) {
 
   const { pregunta, contexto, historial } = entrada.data;
   const estado = leerParams(Object.fromEntries(new URLSearchParams(contexto)), version.metadatos.periodos);
-  const respuesta = await responder(pregunta, historial, { fuente, version, estado }, configModelo());
-  return Response.json(respuesta);
+  const modelo = configModelo();
+  const inicio = Date.now();
+  const base = { version: version.version, contexto, pregunta, modelo: modelo?.modelo ?? null };
+  try {
+    const respuesta = await responder(pregunta, historial, { fuente, version, estado }, modelo);
+    await fuente.registrarConsultaAsistente({
+      ...base, estado: respuesta.estado, modo: respuesta.modo, texto: respuesta.texto, respuesta, error: null, duracion_ms: Date.now() - inicio,
+    });
+    return Response.json(respuesta);
+  } catch (e) {
+    const mensaje = e instanceof Error ? e.message : String(e);
+    await fuente.registrarConsultaAsistente({ ...base, estado: "error", modo: null, texto: null, respuesta: null, error: mensaje, duracion_ms: Date.now() - inicio });
+    console.error("asistente:", e);
+    return Response.json({ error: "No se pudo responder la pregunta. Quedó registrada para revisión." }, { status: 500 });
+  }
 }
