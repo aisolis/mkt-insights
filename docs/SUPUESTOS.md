@@ -15,3 +15,5 @@
 | S11 | Usuarios: Nati Plus+admin; resto por invitación | Sin matriz | Acceso |
 | S12 | Dimensiones expuestas en piloto: periodo, empresa, canal, ruta, zona, sucursal, marca, producto, cliente (solo Plus) | Prototipo | UI |
 | S13 | Cobertura = rutas con alguna línea en el periodo (con los filtros aplicados) / rutas distintas en la versión | El prototipo muestra "cobertura X/Y rutas" sin definirla | Pie del dashboard y evidencia del asistente |
+| S14 | Factura = documento (empresa, nº) con venta neta sumada > 0 en el periodo; ticket = Σ venta neta / facturas. El cubo no tiene pedidos ni visitas | El prototipo habla de "pedidos" y "ticket" | Descomposición del asistente; "pedidos" y "visitas" quedan fuera de alcance |
+| S15 | El asistente envía al modelo (OpenRouter) solo agregados ya formateados por periodo, canal, ruta, marca, producto, zona, sucursal o empresa; nunca filas, clientes ni subgrupo. Las cifras que escriba el modelo deben aparecer en esas consultas o se descarta su texto | La IA "interpreta, no inventa" | Privacidad y confianza en las respuestas |

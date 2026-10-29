@@ -7,8 +7,8 @@ import type { VariacionFila } from "@/lib/semantic/contracts";
 const config = { variacion: { label: "Variación", color: "var(--chart-3)" } } satisfies ChartConfig;
 const ROJO = "#dc2626", VERDE = "#059669";
 
-/** Barras horizontales de variación por canal, de la mayor caída al mayor aumento. */
-export function CanalChart({ filas }: { filas: VariacionFila[] }) {
+/** Barras horizontales de variación por canal (o cualquier dimensión), de la mayor caída al mayor aumento. */
+export function CanalChart({ filas, anchoEtiqueta = 104 }: { filas: VariacionFila[]; anchoEtiqueta?: number }) {
   const datos = filas.filter((f) => f.actual !== 0 || f.anterior !== 0);
   // Dominio con aire a ambos lados del cero para que la etiqueta quepa en el extremo exterior de cada barra.
   const lo = Math.min(0, ...datos.map((f) => f.variacion)), hi = Math.max(0, ...datos.map((f) => f.variacion));
@@ -18,7 +18,8 @@ export function CanalChart({ filas }: { filas: VariacionFila[] }) {
     <ChartContainer config={config} className="aspect-auto w-full" style={{ height: Math.max(120, datos.length * 34 + 16) }}>
       <BarChart data={datos} layout="vertical" margin={{ top: 0, right: 8, left: 8, bottom: 0 }}>
         <XAxis type="number" hide domain={dominio} />
-        <YAxis type="category" dataKey="valor" tickLine={false} axisLine={false} width={104} interval={0} />
+        <YAxis type="category" dataKey="valor" tickLine={false} axisLine={false} width={anchoEtiqueta} interval={0}
+          tickFormatter={(v: string) => (v.length > anchoEtiqueta / 6.5 ? `${v.slice(0, Math.floor(anchoEtiqueta / 6.5) - 1)}…` : v)} />
         <ReferenceLine x={0} stroke="var(--border)" />
         <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel formatter={(_v, _n, item) => {
           const f = item.payload as VariacionFila;

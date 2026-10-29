@@ -80,3 +80,12 @@ export type Evidencia = {
   calculo: string;          // nombre de la función SQL usada
   advertencias: string[];   // p. ej. "Octubre 2026 parcial (12 días)"
 };
+
+export const DescomposicionRequest = KpiRequest;
+const LadoDescomposicion = z.object({
+  venta_neta: z.number(), kg: z.number(), lineas: z.number(), clientes: z.number(), facturas: z.number(),
+  facturas_por_cliente: z.number().nullable(), ticket_factura: z.number().nullable(), venta_por_cliente: z.number().nullable(),
+});
+/** Clientes, facturas y ticket de ambos periodos (ventas.descomposicion, S4 y S14). */
+export const Descomposicion = z.object({ actual: LadoDescomposicion, anterior: LadoDescomposicion });
+export type Descomposicion = z.infer<typeof Descomposicion>;

@@ -16,9 +16,11 @@
 - [ ] Mientras no haya Auth (G5) el servidor lee con service_role: no desplegar antes de G5
 
 ## G4 — Asistente
-- [ ] Catálogo de herramientas tipadas (sin SQL libre): kpi_periodo, variacion_por_dimension, top_contribuyentes, serie_mensual
-- [ ] OpenRouter server-side; prompt con contrato de respuesta (texto + tabla/gráfica + evidencia + hechos/hipótesis)
-- [ ] Banco de 15 preguntas de prueba (incluye fuera de alcance: share, visitas, pedidos)
+- [x] Catálogo de herramientas tipadas (sin SQL libre): kpi_periodo, variacion_por_dimension, top_rutas, serie_mensual, descomposicion
+- [x] OpenRouter server-side; prompt con contrato de respuesta (texto + tabla/gráfica + evidencia + hechos/hipótesis)
+- [x] Verificador de cifras del modelo y modo determinista (sin llave o si el modelo falla)
+- [x] Banco de 15 preguntas de prueba (incluye fuera de alcance: share, visitas, pedidos) — `docs/banco-preguntas.md`
+- [ ] Probar el modo modelo con `OPENROUTER_API_KEY` real (hoy vacía en `.env.local`) y correr el banco también en ese modo
 
 ## G5 — Acceso
 - [ ] Supabase Auth: invitación por correo (Resend), MFA TOTP

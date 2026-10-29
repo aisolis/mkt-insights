@@ -12,7 +12,7 @@ type SearchParams = Record<string, string | string[] | undefined>;
 const FILTROS_URL = [["canal", "canal"], ["ruta", "ruta"], ["marca", "marca"], ["producto", "art_codigo"]] as const;
 
 /** S1: la hoja "Ene 025-Ago 026" trae exactamente 1,000,000 filas (probable corte de exportación). */
-const S1_SIN_CERTIFICAR_HASTA: Periodo = { anio: 2026, mes: 8 };
+export const S1_SIN_CERTIFICAR_HASTA: Periodo = { anio: 2026, mes: 8 };
 
 const uno = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)?.trim() || undefined;
 const clave = (p: Periodo) => p.anio * 100 + p.mes;
