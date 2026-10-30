@@ -1,8 +1,9 @@
 /**
- * Publica una carga validada como la siguiente versión (mientras no exista la pantalla "Cargas y versiones").
- * Uso: npx tsx scripts/publicar.ts [carga_id] [--notas "texto"]
+ * Publica una carga validada como la siguiente versión (lo normal es hacerlo desde "Cargas y versiones").
+ * Uso: npx tsx scripts/publicar.ts [carga_id] [--notas "texto"] [--mes-completo]
  * Sin carga_id publica la última carga validada. La función ventas.publicar hace todo en una transacción:
- * versión nueva, fecha_corte = fecha máxima de la carga, metadatos y resumen mensual (trigger), conciliada_bi = false.
+ * versión nueva = composición vigente con los meses de la carga reemplazados (S8), fecha de corte, metadatos,
+ * conciliada_bi = false. --mes-completo declara cerrado el último mes. No revisa alertas: eso lo hace la app.
  */
 import { config } from "dotenv";
 config({ path: [".env.local", ".env"], quiet: true });
@@ -22,7 +23,7 @@ async function main() {
     cargaId = data.id as string;
   }
 
-  const { data, error } = await sb.schema("ventas").rpc("publicar", { p_carga: cargaId, p_notas: notas });
+  const { data, error } = await sb.schema("ventas").rpc("publicar", { p_carga: cargaId, p_notas: notas, p_ultimo_mes_cerrado: args.includes("--mes-completo") });
   if (error) throw error;
   console.log(data);
 }

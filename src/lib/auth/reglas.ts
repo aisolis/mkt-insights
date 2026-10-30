@@ -3,8 +3,9 @@
  * (interno.nivel_acceso): esto decide a dónde mandar a la persona, la base decide qué datos ve.
  */
 export type Nivel = "estandar" | "plus";
-export type Usuario = { id: string; email: string; nombre: string; nivel: Nivel; esAdmin: boolean };
-export type FilaPerfil = { nombre: string; nivel: Nivel; es_admin: boolean; activo: boolean };
+/** esAprobador: carga y publica versiones del cubo (G7) sin ser admin de usuarios. */
+export type Usuario = { id: string; email: string; nombre: string; nivel: Nivel; esAdmin: boolean; esAprobador: boolean };
+export type FilaPerfil = { nombre: string; nivel: Nivel; es_admin: boolean; es_aprobador?: boolean; activo: boolean };
 export type Claims = { sub: string; email?: string; aal?: string };
 
 export type Acceso =
@@ -17,7 +18,7 @@ export function evaluarAcceso(claims: Claims | null | undefined, perfil: FilaPer
   if (!claims?.sub) return { estado: "sin_sesion" };
   if (claims.aal !== "aal2") return { estado: "sin_2fa" };
   if (!perfil?.activo) return { estado: "sin_perfil" };
-  return { estado: "ok", usuario: { id: claims.sub, email: claims.email ?? "", nombre: perfil.nombre, nivel: perfil.nivel, esAdmin: perfil.es_admin } };
+  return { estado: "ok", usuario: { id: claims.sub, email: claims.email ?? "", nombre: perfil.nombre, nivel: perfil.nivel, esAdmin: perfil.es_admin, esAprobador: !!perfil.es_aprobador } };
 }
 
 /** Destino tras el login: solo rutas internas ("/x"), nunca "//host" ni URLs absolutas. */
@@ -33,5 +34,8 @@ export function rutaSegura(siguiente: unknown, porDefecto = "/"): string {
 export function esRutaPublica(ruta: string) {
   return ruta === "/login" || ruta.startsWith("/auth/");
 }
+
+/** Cargar el cubo, publicar, retirar y conciliar versiones. */
+export const gestionaCargas = (u: Usuario) => u.esAdmin || u.esAprobador;
 
 export const NIVEL_TXT: Record<Nivel, string> = { estandar: "Estándar", plus: "Plus" };

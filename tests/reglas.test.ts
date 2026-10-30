@@ -13,7 +13,7 @@ describe("evaluarAcceso", () => {
   });
   it("con aal2 y perfil activo devuelve el usuario", () => {
     expect(evaluarAcceso({ sub: "u1", aal: "aal2", email: "n@bia.hn" }, perfil)).toEqual({
-      estado: "ok", usuario: { id: "u1", email: "n@bia.hn", nombre: "Nati", nivel: "plus", esAdmin: true },
+      estado: "ok", usuario: { id: "u1", email: "n@bia.hn", nombre: "Nati", nivel: "plus", esAdmin: true, esAprobador: false },
     });
   });
 });

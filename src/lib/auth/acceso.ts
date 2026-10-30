@@ -2,7 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { evaluarAcceso, type Acceso, type Claims, type FilaPerfil, type Usuario } from "./reglas";
+import { evaluarAcceso, gestionaCargas, type Acceso, type Claims, type FilaPerfil, type Usuario } from "./reglas";
 
 /**
  * Capa de acceso: toda página, route handler y server action con datos pasa por aquí. El proxy solo redirige
@@ -13,7 +13,7 @@ export const obtenerAcceso = cache(async (): Promise<Acceso> => {
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims as Claims | undefined;
   if (!claims?.sub || claims.aal !== "aal2") return evaluarAcceso(claims, null);
-  const { data: perfil } = await supabase.from("perfil").select("nombre, nivel, es_admin, activo").eq("user_id", claims.sub).maybeSingle<FilaPerfil>();
+  const { data: perfil } = await supabase.from("perfil").select("nombre, nivel, es_admin, es_aprobador, activo").eq("user_id", claims.sub).maybeSingle<FilaPerfil>();
   return evaluarAcceso(claims, perfil);
 });
 
@@ -29,6 +29,13 @@ export async function requerirAcceso(): Promise<Usuario> {
 export async function requerirAdmin(): Promise<Usuario> {
   const usuario = await requerirAcceso();
   if (!usuario.esAdmin) redirect("/");
+  return usuario;
+}
+
+/** Cargar y publicar versiones: admin o aprobador. */
+export async function requerirGestorCargas(): Promise<Usuario> {
+  const usuario = await requerirAcceso();
+  if (!gestionaCargas(usuario)) redirect("/cargas");
   return usuario;
 }
 
