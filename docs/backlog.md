@@ -35,8 +35,14 @@
 - [ ] Definir con Nati quién es Plus y quién Estándar (S11: no hay matriz)
 
 ## G6 — Conocimiento
-- [ ] Subida de PDFs autorizados a Storage, extracción de texto, embeddings (pgvector), audiencia por nivel
-- [ ] Citas en respuestas híbridas, separadas de los hechos
+- [x] Subida de PDFs autorizados (admin) directo a Storage privado con URL firmada; extracción por página (unpdf), fragmentos, duplicados por sha256 — `0007_conocimiento.sql`
+- [x] Búsqueda híbrida por audiencia (texto en español + pgvector con Reciprocal Rank Fusion); exige 2FA; Estándar no ve documentos "solo Plus"
+- [x] Citas en el asistente separadas de los hechos (documento, fuente, fecha, página, enlace al PDF); herramienta `buscar_documentos` para el modelo
+- [x] Pantalla Conocimiento: lista por audiencia, subir, retirar/reactivar, reintentar
+- [ ] Con `OPENROUTER_API_KEY`: correr `npm run conocimiento:embeddings` y calibrar el umbral de similitud (hoy 0.55) con estudios reales
+- [ ] Proyecto alojado: exponer el esquema `conocimiento` en Data API, extensiones `vector` y `unaccent`
+- [ ] OCR para PDFs escaneados (hoy se rechazan con un mensaje claro)
+- [ ] Procesamiento en segundo plano si llegan PDFs grandes (hoy es síncrono en la acción, límite de tiempo de Vercel)
 
 ## G7 — Operación
 - [ ] Runbook mensual para Nati; snapshot por mes (S8); retiro de versión

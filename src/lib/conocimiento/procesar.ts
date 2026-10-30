@@ -8,9 +8,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { extractText, getDocumentProxy } from "unpdf";
 import { aVector, embeber, type ConfigEmbeddings } from "./embeddings";
 import { fragmentar } from "./fragmentar";
+import { BUCKET, MAX_BYTES } from "./tipos";
 
-export const BUCKET = "conocimiento";
-export const MAX_BYTES = 20 * 1024 * 1024;
+export { BUCKET, MAX_BYTES };
 
 export async function extraerPaginas(bytes: Uint8Array): Promise<string[]> {
   const pdf = await getDocumentProxy(bytes);

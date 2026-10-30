@@ -5,6 +5,7 @@ import { ejecutar, ErrorHerramienta, herramientasModelo } from "@/lib/asistente/
 import { responder } from "@/lib/asistente/responder";
 import type { Contexto, Fuente } from "@/lib/asistente/tipos";
 import { cifrasNoVerificadas, cifrasPermitidas } from "@/lib/asistente/verificar";
+import type { Encontrado } from "@/lib/conocimiento/tipos";
 import type { VersionVigente } from "@/lib/semantic/contracts";
 
 const meta: VersionVigente["metadatos"] = {
@@ -190,3 +191,79 @@ function respuestasModelo(mensajes: { content?: string; tool_calls?: unknown[] }
   return vi.fn<typeof fetch>(async () =>
     Response.json({ choices: [{ message: { content: mensajes[i]?.content ?? null, tool_calls: mensajes[i++]?.tool_calls } }] }));
 }
+
+describe("documentos autorizados (G6)", () => {
+  const encontrado = (over: Partial<Encontrado> = {}): Encontrado => ({
+    fragmento_id: 1, documento_id: "doc-1", titulo: "Estudio ficticio de mayoreo", fuente: "Insights BIA", fecha_documento: "2026-08-01",
+    pagina: 3, texto: "Los mayoristas reportan que la temporada de lluvias reduce en 15% la frecuencia de compra.", coincidencias: 3, terminos: 4,
+    similitud: null, puntaje: 0.03, ...over,
+  });
+  const conDocs = (resultados: Encontrado[]) => {
+    const documentos = vi.fn(async () => resultados);
+    return { c: { ...ctx(), documentos }, documentos };
+  };
+
+  it("determinista: agrega el contexto relevante aparte de los hechos", async () => {
+    const { c } = conDocs([encontrado(), encontrado({ fragmento_id: 2, documento_id: "doc-2", coincidencias: 1 })]);
+    const r = await responder("¿Dónde se concentra la caída de mayoreo?", [], c, null);
+    expect(r.contexto).toEqual([expect.objectContaining({ id: "d1", titulo: "Estudio ficticio de mayoreo", pagina: 3 })]);
+    expect(r.hechos.join(" ")).not.toMatch(/lluvias/);
+  });
+
+  it("si la búsqueda falla, responde igual sin contexto", async () => {
+    const r = await responder("¿Dónde se concentra la caída?", [], { ...ctx(), documentos: async () => { throw new Error("caída"); } }, null);
+    expect(r.estado).toBe("ok");
+    expect(r.contexto).toEqual([]);
+  });
+
+  it("fuera del cubo pero con documentos: sin cifras del cubo, con el contexto citado", async () => {
+    const { c } = conDocs([encontrado({ texto: "La competencia lanzó presentaciones pequeñas en mayoreo." })]);
+    const r = await responder("¿Qué está haciendo la competencia en mayoreo?", [], c, null);
+    expect(r.estado).toBe("fuera_de_alcance");
+    expect(r.texto).toMatch(/documentos autorizados/);
+    expect(r.contexto).toHaveLength(1);
+    expect(r.consultas).toEqual([]);
+  });
+
+  it("datos personales y detalle por cliente: ni siquiera busca en documentos", async () => {
+    const { c, documentos } = conDocs([encontrado()]);
+    for (const p of ["¿Cuál es la cédula del cliente 123?", "¿Qué clientes dejaron de comprar?"]) {
+      const r = await responder(p, [], c, null);
+      expect(r.contexto).toEqual([]);
+    }
+    expect(documentos).not.toHaveBeenCalled();
+  });
+
+  it("modelo: busca documentos, cita d1 y la cifra del documento pasa el verificador", async () => {
+    const { c, documentos } = conDocs([encontrado()]);
+    const fetch = respuestasModelo([
+      { tool_calls: [
+        { id: "t1", type: "function", function: { name: "kpi_periodo", arguments: JSON.stringify({ periodo: "2026-09", comparado: "2026-08" }) } },
+        { id: "t2", type: "function", function: { name: "buscar_documentos", arguments: JSON.stringify({ consulta: "lluvias mayoreo" }) } },
+      ] },
+      { content: JSON.stringify({ texto: "La venta cayó 10.0%. Un estudio señala que las lluvias reducen 15% la frecuencia de compra [d1].", hipotesis: [], visuales: [], citas: ["d1"] }) },
+    ]);
+    const r = await responder("¿Por qué cayó la venta?", [], c, { apiKey: "test", modelo: "m", fetch });
+    expect(documentos).toHaveBeenCalledWith("lluvias mayoreo");
+    expect(r.texto).toContain("[d1]");
+    expect(r.contexto.map((x) => x.id)).toEqual(["d1"]);
+    const cuerpo = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(cuerpo.tools.map((t: { function: { name: string } }) => t.function.name)).toContain("buscar_documentos");
+    const herramienta = JSON.parse((fetch.mock.calls[1][1] as RequestInit).body as string).messages.at(-1);
+    expect(JSON.parse(herramienta.content).documentos[0]).toMatchObject({ id: "d1", pagina: 3 });
+  });
+
+  it("modelo: una cifra de un documento que no citó se descarta", async () => {
+    const { c } = conDocs([encontrado()]);
+    const fetch = respuestasModelo([
+      { tool_calls: [
+        { id: "t1", type: "function", function: { name: "kpi_periodo", arguments: JSON.stringify({ periodo: "2026-09", comparado: "2026-08" }) } },
+        { id: "t2", type: "function", function: { name: "buscar_documentos", arguments: JSON.stringify({ consulta: "lluvias" }) } },
+      ] },
+      { content: JSON.stringify({ texto: "Las lluvias bajan 15% la frecuencia.", hipotesis: [], visuales: [], citas: [] }) },
+    ]);
+    const r = await responder("¿Por qué cayó?", [], c, { apiKey: "test", modelo: "m", fetch });
+    expect(r.texto).not.toContain("15%");
+    expect(r.evidencia.advertencias[0]).toMatch(/\(15\)/);
+  });
+});

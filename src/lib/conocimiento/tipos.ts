@@ -1,6 +1,9 @@
 /** Tipos del conocimiento propio (G6), compartidos entre servidor, asistente y UI. */
 import { z } from "zod";
 
+export const BUCKET = "conocimiento";
+export const MAX_BYTES = 20 * 1024 * 1024;
+
 export const Audiencia = z.enum(["estandar", "plus"]);
 export type Audiencia = z.infer<typeof Audiencia>;
 

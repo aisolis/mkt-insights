@@ -3,6 +3,7 @@
  * controlada (src/lib/semantic) y viaja con su evidencia.
  */
 import type { PuntoSerie } from "@/components/dashboard/serie-chart";
+import type { Buscador, Cita } from "@/lib/conocimiento/tipos";
 import type { EstadoDashboard } from "@/lib/dashboard/params";
 import type {
   Descomposicion, DescomposicionRequest, Filtros, Kpi, KpiRequest, Periodo, SeriePunto, SerieRequest,
@@ -19,7 +20,8 @@ export type Fuente = {
   descomposicion(req: z.input<typeof DescomposicionRequest>): Promise<Descomposicion>;
 };
 
-export type Contexto = { fuente: Fuente; version: VersionVigente; estado: EstadoDashboard };
+/** `documentos`: búsqueda en el conocimiento autorizado (G6); sin ella el asistente responde solo con el cubo. */
+export type Contexto = { fuente: Fuente; version: VersionVigente; estado: EstadoDashboard; documentos?: Buscador };
 
 export type Visual =
   | { tipo: "variacion"; titulo: string; filas: VariacionFila[] }
@@ -61,6 +63,8 @@ export type Respuesta = {
   hipotesis: string[];
   visuales: Visual[];
   evidencia: Evidencia;
+  /** Contexto de documentos autorizados: se muestra aparte y nunca cuenta como hecho del cubo. */
+  contexto: Cita[];
   consultas: Omit<Resultado, "resumen" | "hechos" | "visual">[];
 };
 

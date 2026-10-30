@@ -2,7 +2,7 @@
  * "La IA interpreta, no inventa datos": toda cifra que escriba el modelo debe salir de los resultados de las
  * consultas (resúmenes y hechos ya formateados). Se toleran redondeos: una cifra vale si coincide con alguna de
  * las consultas a la precisión más gruesa de las dos (8.35 ≈ 8.4, 7 ≈ 6.9; 7.2 ≠ 6.9). Se permiten años y
- * números chicos (≤ 31).
+ * números chicos (≤ 31), salvo porcentajes. Las cifras de un documento valen solo si el modelo lo citó.
  */
 const NUMERO = /\d[\d,]*(?:\.\d+)?/g;
 
@@ -28,7 +28,9 @@ export function cifrasNoVerificadas(texto: string, permitidas: Cifra[]): string[
   const malas: string[] = [];
   for (const m of texto.matchAll(NUMERO)) {
     const c = leer(m[0]);
-    if (Number.isInteger(c.valor) && c.decimales === 0 && (c.valor <= 31 || (c.valor >= 2000 && c.valor <= 2100))) continue;
+    // Días, cantidades chicas y años pasan; un porcentaje (aunque sea "15%") siempre se verifica.
+    const porcentaje = /^\s*%/.test(texto.slice(m.index + m[0].length));
+    if (!porcentaje && Number.isInteger(c.valor) && c.decimales === 0 && (c.valor <= 31 || (c.valor >= 2000 && c.valor <= 2100))) continue;
     if (!permitidas.some((p) => coincide(c, p))) malas.push(m[0]);
   }
   return [...new Set(malas)];

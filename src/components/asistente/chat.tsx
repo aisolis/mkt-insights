@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import type { Respuesta, Turno, Visual } from "@/lib/asistente/tipos";
+import type { Cita } from "@/lib/conocimiento/tipos";
+import { fechaCorta } from "@/lib/format";
 
 type Intercambio = { pregunta: string; respuesta?: Respuesta; error?: string };
 
@@ -87,7 +89,12 @@ export function Chat({ contexto, inicial, sugerencias, conModelo }: { contexto: 
 
 function RespuestaVista({ r }: { r: Respuesta }) {
   if (r.estado === "fuera_de_alcance") {
-    return <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{r.texto}</div>;
+    return (
+      <div className="space-y-3">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{r.texto}</div>
+        <ContextoDocumentos citas={r.contexto ?? []} />
+      </div>
+    );
   }
   return (
     <div className="space-y-4 rounded-lg border border-neutral-200 bg-white p-4">
@@ -101,6 +108,8 @@ function RespuestaVista({ r }: { r: Respuesta }) {
           <Lista titulo="Hipótesis a validar" items={r.hipotesis} tono="text-amber-800" vacio="Sin hipótesis: la pregunta se responde con los datos." />
         </div>
       )}
+
+      <ContextoDocumentos citas={r.contexto ?? []} />
 
       <Evidencia r={r} />
 
@@ -155,6 +164,31 @@ function Lista({ titulo, items, tono, vacio }: { titulo: string; items: string[]
       {items.length ? (
         <ul className="list-disc space-y-1 pl-4 text-xs leading-relaxed text-neutral-700 tabular-nums">{items.map((h) => <li key={h}>{h}</li>)}</ul>
       ) : <p className="text-xs text-neutral-400">{vacio}</p>}
+    </div>
+  );
+}
+
+/** Contexto de documentos autorizados (G6): aparte de los hechos, con documento, fuente y página. */
+function ContextoDocumentos({ citas }: { citas: Cita[] }) {
+  if (!citas.length) return null;
+  return (
+    <div className="space-y-2 rounded-md border border-sky-200 bg-sky-50/60 p-3 text-xs">
+      <div className="font-semibold uppercase tracking-wide text-sky-800">Contexto de documentos autorizados</div>
+      <p className="text-sky-900">No son datos de venta: sirven para entender causas y contexto.</p>
+      <ol className="space-y-2">
+        {citas.map((c) => (
+          <li key={c.id} className="space-y-0.5">
+            <div className="font-medium text-neutral-900">
+              [{c.id}] {c.titulo}
+              <span className="font-normal text-neutral-600"> · {c.fuente}{c.fecha && ` · ${fechaCorta(c.fecha)}`} · pág. {c.pagina}</span>
+            </div>
+            <blockquote className="border-l-2 border-sky-300 pl-2 text-neutral-700">{c.extracto}</blockquote>
+            <a href={`/api/conocimiento/${c.documentoId}#page=${c.pagina}`} target="_blank" rel="noopener" className="text-sky-800 underline-offset-4 hover:underline">
+              Abrir PDF en la página {c.pagina}
+            </a>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

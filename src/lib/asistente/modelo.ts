@@ -1,7 +1,10 @@
 /**
  * Modo modelo: OpenRouter (solo servidor) elige herramientas del catálogo y redacta. No ve filas de hecho ni
- * datos de clientes: solo los resúmenes formateados de las consultas (S10).
+ * datos de clientes: solo los resúmenes formateados de las consultas (S10) y, si los pide, extractos de
+ * documentos autorizados (S17).
  */
+import { z } from "zod";
+import { aCita, type Cita } from "@/lib/conocimiento/tipos";
 import { fechaCorta, periodoLargo } from "@/lib/format";
 import { describirFiltros, periodoTxt } from "./texto";
 import { ErrorHerramienta, ejecutar, herramientasModelo } from "./herramientas";
@@ -23,7 +26,19 @@ type LlamadaModelo = { id: string; type: "function"; function: { name: string; a
 const MAX_RONDAS = 6;
 const MAX_CONSULTAS = 10;
 
-export type SalidaModelo = { texto: string; hipotesis: string[]; visuales: string[]; resultados: Resultado[] };
+/** `documentos`: todo lo que devolvió buscar_documentos (d1, d2…); `citas`: los que el modelo dice haber usado. */
+export type SalidaModelo = { texto: string; hipotesis: string[]; visuales: string[]; citas: string[]; resultados: Resultado[]; documentos: Cita[] };
+
+const ArgsBuscar = z.object({ consulta: z.string().min(3).max(300).describe("Qué buscar, en español") }).strict();
+const BUSCAR_DOCUMENTOS = {
+  type: "function" as const,
+  function: {
+    name: "buscar_documentos",
+    description: "Busca en estudios y documentos autorizados por Insights. NO son datos de venta: sirven como contexto (causas, mercado, consumidor). Devuelve extractos con documento y página para citarlos.",
+    parameters: z.toJSONSchema(ArgsBuscar, { io: "input" }),
+  },
+};
+const MAX_CITAS_POR_BUSQUEDA = 5;
 
 export async function preguntarAlModelo(pregunta: string, historial: Turno[], ctx: Contexto, cfg: ConfigModelo): Promise<SalidaModelo> {
   const mensajes: Mensaje[] = [
@@ -32,7 +47,8 @@ export async function preguntarAlModelo(pregunta: string, historial: Turno[], ct
     { role: "user", content: pregunta },
   ];
   const resultados: Resultado[] = [];
-  const herramientas = herramientasModelo();
+  const documentos: Cita[] = [];
+  const herramientas = ctx.documentos ? [...herramientasModelo(), BUSCAR_DOCUMENTOS] : herramientasModelo();
 
   for (let ronda = 0; ronda < MAX_RONDAS; ronda++) {
     const res = await (cfg.fetch ?? fetch)(cfg.url ?? "https://openrouter.ai/api/v1/chat/completions", {
@@ -46,12 +62,14 @@ export async function preguntarAlModelo(pregunta: string, historial: Turno[], ct
     const msg = json.choices?.[0]?.message;
     if (!msg) throw new Error("OpenRouter: respuesta sin mensaje");
 
-    if (!msg.tool_calls?.length) return { ...leerFinal(msg.content ?? ""), resultados };
+    if (!msg.tool_calls?.length) return { ...leerFinal(msg.content ?? ""), resultados, documentos };
 
     mensajes.push({ role: "assistant", content: msg.content ?? null, tool_calls: msg.tool_calls });
     for (const llamada of msg.tool_calls) {
       let contenido: unknown;
-      if (resultados.length >= MAX_CONSULTAS) contenido = { error: "límite de consultas alcanzado; responde con lo que tienes" };
+      if (llamada.function.name === BUSCAR_DOCUMENTOS.function.name && ctx.documentos) {
+        contenido = await buscar(llamada.function.arguments, ctx.documentos, documentos);
+      } else if (resultados.length >= MAX_CONSULTAS) contenido = { error: "límite de consultas alcanzado; responde con lo que tienes" };
       else {
         try {
           const r = await ejecutar(llamada.function.name, JSON.parse(llamada.function.arguments || "{}"), ctx, `c${resultados.length + 1}`);
@@ -68,21 +86,43 @@ export async function preguntarAlModelo(pregunta: string, historial: Turno[], ct
   throw new Error("el modelo no terminó en el número máximo de rondas");
 }
 
-function leerFinal(contenido: string): Omit<SalidaModelo, "resultados"> {
+/** Ejecuta buscar_documentos: numera los extractos (d1, d2…) sin repetir y le pasa al modelo solo lo citable. */
+async function buscar(crudos: string, buscador: NonNullable<Contexto["documentos"]>, documentos: Cita[]) {
+  try {
+    const { consulta } = ArgsBuscar.parse(JSON.parse(crudos || "{}"));
+    const encontrados = (await buscador(consulta)).slice(0, MAX_CITAS_POR_BUSQUEDA);
+    if (!encontrados.length) return { documentos: [], nota: "No hay documentos autorizados sobre eso." };
+    const citas = encontrados.map((e) => {
+      const c = aCita(e, `d${documentos.length + 1}`);
+      const previo = documentos.find((d) => d.documentoId === c.documentoId && d.pagina === c.pagina && d.extracto === c.extracto);
+      if (previo) return previo;
+      documentos.push(c);
+      return c;
+    });
+    return { documentos: citas.map(({ id, titulo, fuente, fecha, pagina, extracto }) => ({ id, titulo, fuente, fecha, pagina, extracto })) };
+  } catch (e) {
+    if (e instanceof z.ZodError || e instanceof SyntaxError) return { error: 'argumentos inválidos: {"consulta": "texto"}' };
+    console.error("asistente: buscar_documentos falló", e);
+    return { error: "la búsqueda de documentos falló" };
+  }
+}
+
+function leerFinal(contenido: string): Omit<SalidaModelo, "resultados" | "documentos"> {
   const limpio = contenido.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
   try {
-    const j = JSON.parse(limpio.slice(limpio.indexOf("{"), limpio.lastIndexOf("}") + 1)) as { texto?: unknown; hipotesis?: unknown; visuales?: unknown };
+    const j = JSON.parse(limpio.slice(limpio.indexOf("{"), limpio.lastIndexOf("}") + 1)) as { texto?: unknown; hipotesis?: unknown; visuales?: unknown; citas?: unknown };
     return {
+      citas: Array.isArray(j.citas) ? j.citas.filter((c): c is string => typeof c === "string") : [],
       texto: typeof j.texto === "string" ? j.texto : "",
       hipotesis: Array.isArray(j.hipotesis) ? j.hipotesis.filter((h): h is string => typeof h === "string") : [],
       visuales: Array.isArray(j.visuales) ? j.visuales.filter((v): v is string => typeof v === "string") : [],
     };
   } catch {
-    return { texto: limpio, hipotesis: [], visuales: [] };
+    return { texto: limpio, hipotesis: [], visuales: [], citas: [] };
   }
 }
 
-function sistema({ version, estado }: Contexto) {
+function sistema({ version, estado, documentos }: Contexto) {
   const meta = version.metadatos;
   const parciales = meta.periodos.filter((p) => !p.cerrado).map((p) => `${periodoTxt(p)} (${p.dias} días)`);
   const cmp = estado.comparar === "anio" ? "el mismo mes del año anterior" : "el mes anterior";
@@ -96,6 +136,10 @@ function sistema({ version, estado }: Contexto) {
     "2. Para explicar una variación, empieza por kpi_periodo y luego abre por las dimensiones que hagan falta (variacion_por_dimension, top_rutas) y descomposicion para separar frecuencia de ticket.",
     "3. Los hechos los muestra el sistema a partir de las consultas; tú das la lectura. Las hipótesis son posibles causas que los datos de venta no prueban: escríbelas sin cifras.",
     "4. Fuera de alcance (no inventes nada): participación de mercado, Nielsen, competencia, pronósticos, visitas, pedidos (solo hay facturas), presupuesto, márgenes, inventario y datos de clientes individuales.",
-    "5. Respuesta final, solo JSON: {\"texto\": \"2 a 4 frases\", \"hipotesis\": [\"...\"], \"visuales\": [\"c1\", \"c2\"]} donde visuales son los id de las consultas que mejor muestran la respuesta (máximo 3).",
+    ...(documentos ? [
+      "5. buscar_documentos da extractos de estudios autorizados: úsalos para contexto e hipótesis, nunca como cifras de venta. En los temas de la regla 4 solo puedes decir lo que digan esos documentos, citándolos. Si usas uno, nómbralo en el texto como [d1] y ponlo en \"citas\". Una cifra de un documento solo va junto a su [dN]. Si nada aplica, no cites.",
+      "6. Respuesta final, solo JSON: {\"texto\": \"2 a 4 frases\", \"hipotesis\": [\"...\"], \"visuales\": [\"c1\", \"c2\"], \"citas\": [\"d1\"]} donde visuales son los id de las consultas que mejor muestran la respuesta (máximo 3).",
+    ] : []),
+    ...(documentos ? [] : ["5. Respuesta final, solo JSON: {\"texto\": \"2 a 4 frases\", \"hipotesis\": [\"...\"], \"visuales\": [\"c1\", \"c2\"]} donde visuales son los id de las consultas que mejor muestran la respuesta (máximo 3)."]),
   ].join("\n");
 }

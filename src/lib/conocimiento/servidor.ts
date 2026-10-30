@@ -2,8 +2,8 @@ import "server-only";
 import { z } from "zod";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { aVector, configEmbeddings, embeber } from "./embeddings";
-import { BUCKET, MAX_BYTES, procesarDocumento } from "./procesar";
-import { DocumentoVisible, Encontrado, type Audiencia, type Buscador } from "./tipos";
+import { procesarDocumento } from "./procesar";
+import { BUCKET, DocumentoVisible, Encontrado, MAX_BYTES, type Audiencia, type Buscador } from "./tipos";
 
 /** Lectura con la sesión de la persona: la base filtra por audiencia y exige 2FA. */
 export async function documentosVisibles(): Promise<DocumentoVisible[]> {

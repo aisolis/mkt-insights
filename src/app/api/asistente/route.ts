@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { accesoApi } from "@/lib/auth/acceso";
 import { configModelo } from "@/lib/asistente/modelo";
+import { buscarDocumentos } from "@/lib/conocimiento/servidor";
 import { responder } from "@/lib/asistente/responder";
 import { leerParams } from "@/lib/dashboard/params";
 import * as fuente from "@/lib/semantic/queries";
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
   const inicio = Date.now();
   const base = { usuario_id: usuario.id, version: version.version, contexto, pregunta, modelo: modelo?.modelo ?? null };
   try {
-    const respuesta = await responder(pregunta, historial, { fuente, version, estado }, modelo);
+    const respuesta = await responder(pregunta, historial, { fuente, version, estado, documentos: buscarDocumentos }, modelo);
     await fuente.registrarConsultaAsistente({
       ...base, estado: respuesta.estado, modo: respuesta.modo, texto: respuesta.texto, respuesta, error: null, duracion_ms: Date.now() - inicio,
     });
