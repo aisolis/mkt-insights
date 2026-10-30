@@ -26,6 +26,7 @@ export async function invitarUsuario(_: EstadoAccion, form: FormData): Promise<E
 const Accion = z.discriminatedUnion("accion", [
   z.object({ accion: z.literal("nivel"), valor: z.enum(["estandar", "plus"]) }),
   z.object({ accion: z.literal("admin"), valor: z.enum(["si", "no"]) }),
+  z.object({ accion: z.literal("aprobador"), valor: z.enum(["si", "no"]) }),
   z.object({ accion: z.literal("activo"), valor: z.enum(["si", "no"]) }),
   z.object({ accion: z.literal("reenviar") }),
 ]);
@@ -42,7 +43,8 @@ export async function accionUsuario(_: EstadoAccion, form: FormData): Promise<Es
   let r: { error?: string };
   if (d.accion === "reenviar") r = await reenviarInvitacion(userId.data);
   else {
-    const cambio: Cambio = d.accion === "nivel" ? { nivel: d.valor } : d.accion === "admin" ? { esAdmin: d.valor === "si" } : { activo: d.valor === "si" };
+    const cambio: Cambio = d.accion === "nivel" ? { nivel: d.valor } : d.accion === "admin" ? { esAdmin: d.valor === "si" }
+      : d.accion === "aprobador" ? { esAprobador: d.valor === "si" } : { activo: d.valor === "si" };
     r = await cambiarPerfil(userId.data, cambio);
   }
   if (r.error) return r;

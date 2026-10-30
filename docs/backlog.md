@@ -5,7 +5,7 @@
 - [ ] Migración `0001_init.sql`; seed `docs/homologacion-canal.csv`
 - [ ] Script de ingesta (Node/TS, calamine o exceljs streaming): XLSX → Storage privado → job → `ventas.hecho`; serial Excel → fecha; códigos a texto; flags duplicado/discrepancia
 - [ ] Test de paridad: totales por mes/canal/empresa == `analisis/totales_*.csv` (1,073,421 filas; neta 3,367,463,789.74; kg 17,795,035.1532)
-- [ ] Pantalla "Cargas y versiones": subir, ver estado, errores, publicar versión
+- [x] Pantalla "Cargas y versiones": subir, ver estado, errores, publicar versión (G7)
 
 ## G3 — Dashboard
 - [x] Layout del prototipo: sidebar (Inicio, Asistente, Cargas y versiones, Conocimiento, Perfiles y accesos), cabecera versión/corte/conciliada
@@ -45,4 +45,12 @@
 - [ ] Procesamiento en segundo plano si llegan PDFs grandes (hoy es síncrono en la acción, límite de tiempo de Vercel)
 
 ## G7 — Operación
-- [ ] Runbook mensual para Nati; snapshot por mes (S8); retiro de versión
+- [x] Versiones compuestas por mes (`ventas.version_mes`): la carga del mes reemplaza solo ese mes (S8) — `0008_ciclo_mensual.sql`
+- [x] Cargas y versiones: subir Excel del mes directo a Storage, validar, alertas, publicar, retirar, conciliar con BI con nota, descartar
+- [x] Ingesta compartida entre app y script (`src/lib/cargas/ingesta.ts`); el script queda para el histórico > 50 MB
+- [x] Runbook mensual para Insights — `docs/runbook-mensual.md`
+- [ ] Hacer que S1 ("sin certificar" ene-2025–ago-2026) salga de los datos: cuando lleguen reexportaciones por mes, quitar la marca de los meses reemplazados
+- [ ] Aviso al equipo cuando se publica una versión (correo con Resend)
+- [ ] Proyecto alojado: bucket `cargas` (50 MB; el plan gratuito limita a 50 MB por archivo) y `maxDuration` de Vercel ≥ 300 s para procesar y publicar
+- [ ] Probar la carga con una exportación mensual real del cubo (hoy probado con archivos ficticios)
+- [x] Perfiles y accesos: "Puede publicar versiones" (perfil.es_aprobador) para quien carga sin ser admin

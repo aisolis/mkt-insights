@@ -88,6 +88,18 @@ describe.skipIf(!url || !anon || !service)("acceso por perfil en la base", () =>
       expect(k.error).toBeNull();
       expect(k.data.venta_neta).toBeGreaterThan(0);
       expect(k.data.clientes_con_compra).toBeGreaterThan(0);
+      const h = await sb.schema("ventas").rpc("versiones");
+      expect(h.error).toBeNull();
+      expect(h.data.some((x: { version: number }) => x.version === version)).toBe(true);
+    });
+
+    it("no puede publicar, retirar ni conciliar versiones (solo el servidor, tras verificar el rol)", async () => {
+      const estado = () => svc.schema("ventas").from("publicacion").select("conciliada_bi, retirada_en").eq("version", version).single().then((r) => r.data);
+      const antes = await estado();
+      for (const [fn, args] of [["publicar", { p_carga: crypto.randomUUID() }], ["retirar_version", { p_version: version, p_motivo: "intento" }], ["marcar_conciliada", { p_version: version, p_nota: "intento de conciliar" }]] as const) {
+        expect((await sb.schema("ventas").rpc(fn, args)).error).not.toBeNull();
+      }
+      expect(await estado()).toEqual(antes);
     });
 
     it("no lee filas de hecho (ni clientes) ni las funciones internas", async () => {

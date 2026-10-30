@@ -51,7 +51,7 @@ export default async function Perfiles() {
                     <div className="font-medium">{u.nombre}{yo && <span className="font-normal text-neutral-500"> (tú)</span>}</div>
                     <div className="text-xs text-neutral-500">{u.email}</div>
                   </TableCell>
-                  <TableCell>{NIVEL_TXT[u.nivel]}{u.esAdmin && " · admin"}</TableCell>
+                  <TableCell>{NIVEL_TXT[u.nivel]}{u.esAdmin && " · admin"}{u.esAprobador && " · publica versiones"}</TableCell>
                   <TableCell><Badge variant={ESTADO[u.estado].variante}>{ESTADO[u.estado].txt}</Badge></TableCell>
                   <TableCell className="text-neutral-600">{u.ultimoIngreso ? fechaLocal(u.ultimoIngreso) : "—"}</TableCell>
                   <TableCell>
@@ -62,6 +62,9 @@ export default async function Perfiles() {
                       {!yo && (
                         <AccionUsuario userId={u.id} accion="admin" valor={u.esAdmin ? "no" : "si"}>{u.esAdmin ? "Quitar admin" : "Hacer admin"}</AccionUsuario>
                       )}
+                      <AccionUsuario userId={u.id} accion="aprobador" valor={u.esAprobador ? "no" : "si"}>
+                        {u.esAprobador ? "Quitar publicar versiones" : "Puede publicar versiones"}
+                      </AccionUsuario>
                       {!yo && (
                         <AccionUsuario userId={u.id} accion="activo" valor={u.activo ? "no" : "si"}>{u.activo ? "Desactivar" : "Reactivar"}</AccionUsuario>
                       )}

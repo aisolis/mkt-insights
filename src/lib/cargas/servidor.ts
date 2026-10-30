@@ -26,6 +26,10 @@ export async function listarCargas(): Promise<FilaCarga[]> {
 
 const hoyHN = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Tegucigalpa" }).format(new Date());
 
+export async function mesesDeCargas(cargaIds: string[]) {
+  return (await mesesParaAlertas(createServiceClient(), cargaIds)).porCarga;
+}
+
 export async function alertasDe(cargaIds: string[]): Promise<Map<string, Alerta[]>> {
   const { porCarga, vigente } = await mesesParaAlertas(createServiceClient(), cargaIds);
   return new Map(cargaIds.map((id) => [id, alertasCarga(porCarga.get(id) ?? [], vigente, hoyHN())]));

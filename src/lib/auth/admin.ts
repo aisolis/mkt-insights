@@ -7,15 +7,15 @@ import type { Nivel } from "./reglas";
  * la llama una server action que ya verificó requerirAdmin(). Nunca se importa desde el cliente.
  */
 export type FilaUsuario = {
-  id: string; email: string; nombre: string; nivel: Nivel; esAdmin: boolean; activo: boolean;
+  id: string; email: string; nombre: string; nivel: Nivel; esAdmin: boolean; esAprobador: boolean; activo: boolean;
   estado: "invitado" | "sin_2fa" | "activo" | "inactivo"; ultimoIngreso: string | null; invitadoEn: string | null;
 };
 
-type FilaPerfil = { user_id: string; nombre: string; nivel: Nivel; es_admin: boolean; activo: boolean; creado_en: string };
+type FilaPerfil = { user_id: string; nombre: string; nivel: Nivel; es_admin: boolean; es_aprobador: boolean; activo: boolean; creado_en: string };
 
 export async function listarUsuarios(): Promise<FilaUsuario[]> {
   const svc = createServiceClient();
-  const perfiles = await svc.from("perfil").select("user_id, nombre, nivel, es_admin, activo, creado_en").order("creado_en").returns<FilaPerfil[]>();
+  const perfiles = await svc.from("perfil").select("user_id, nombre, nivel, es_admin, es_aprobador, activo, creado_en").order("creado_en").returns<FilaPerfil[]>();
   if (perfiles.error) throw new Error(`perfiles: ${perfiles.error.message}`);
   // listUsers no trae los factores de 2FA; getUserById sí. El piloto tiene pocas personas: una consulta por cada una.
   const usuarios = await Promise.all(perfiles.data.map((p) => svc.auth.admin.getUserById(p.user_id).then((r) => r.data.user)));
@@ -24,7 +24,7 @@ export async function listarUsuarios(): Promise<FilaUsuario[]> {
     const con2fa = !!u?.factors?.some((f) => f.factor_type === "totp" && f.status === "verified");
     const estado = !p.activo ? "inactivo" : !u?.email_confirmed_at ? "invitado" : !con2fa ? "sin_2fa" : "activo";
     return {
-      id: p.user_id, email: u?.email ?? "—", nombre: p.nombre, nivel: p.nivel, esAdmin: p.es_admin, activo: p.activo,
+      id: p.user_id, email: u?.email ?? "—", nombre: p.nombre, nivel: p.nivel, esAdmin: p.es_admin, esAprobador: p.es_aprobador, activo: p.activo,
       estado, ultimoIngreso: u?.last_sign_in_at ?? null, invitadoEn: u?.invited_at ?? p.creado_en,
     };
   });
@@ -57,13 +57,14 @@ export async function reenviarInvitacion(userId: string): Promise<{ error?: stri
   return r.error ? { error: `No se pudo reenviar (${r.error.message}).` } : {};
 }
 
-export type Cambio = { nivel: Nivel } | { esAdmin: boolean } | { activo: boolean };
+export type Cambio = { nivel: Nivel } | { esAdmin: boolean } | { esAprobador: boolean } | { activo: boolean };
 
 /** Cambia nivel, admin o estado. Desactivar corta el acceso a datos de inmediato (la base revisa perfil.activo
  * en cada consulta) y bloquea nuevos ingresos; reactivar quita el bloqueo. */
 export async function cambiarPerfil(userId: string, cambio: Cambio): Promise<{ error?: string }> {
   const svc = createServiceClient();
-  const fila = "nivel" in cambio ? { nivel: cambio.nivel } : "esAdmin" in cambio ? { es_admin: cambio.esAdmin } : { activo: cambio.activo };
+  const fila = "nivel" in cambio ? { nivel: cambio.nivel } : "esAdmin" in cambio ? { es_admin: cambio.esAdmin }
+    : "esAprobador" in cambio ? { es_aprobador: cambio.esAprobador } : { activo: cambio.activo };
   const { error } = await svc.from("perfil").update(fila).eq("user_id", userId);
   if (error) return { error: `No se pudo guardar (${error.message}).` };
   if ("activo" in cambio) {
