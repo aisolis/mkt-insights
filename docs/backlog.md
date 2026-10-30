@@ -13,20 +13,26 @@
 - [x] KPIs: venta neta, kg (t), precio/kg, clientes con compra + variación vs. mes y año anterior
 - [x] Gráfica mensual, barras variación por canal, tabla rutas que más contribuyen, exportar CSV
 - [x] Botón "Preguntar al asistente" con filtros actuales (el asistente los lee en G4)
-- [ ] Mientras no haya Auth (G5) el servidor lee con service_role: no desplegar antes de G5
+- [x] Lectura con la sesión del usuario (G5); service_role solo en scripts y administración de usuarios
 
 ## G4 — Asistente
 - [x] Catálogo de herramientas tipadas (sin SQL libre): kpi_periodo, variacion_por_dimension, top_rutas, serie_mensual, descomposicion
 - [x] OpenRouter server-side; prompt con contrato de respuesta (texto + tabla/gráfica + evidencia + hechos/hipótesis)
 - [x] Verificador de cifras del modelo (tolera redondeos) y modo determinista (sin llave o si el modelo falla)
-- [x] Bitácora `ventas.consulta_asistente` (pregunta, respuesta, consultas, versión, modo, modelo, duración); `usuario_id` se llena en G5
+- [x] Bitácora `ventas.consulta_asistente` (pregunta, respuesta, consultas, versión, modo, modelo, duración); con `usuario_id` (G5)
 - [x] Banco de 15 preguntas de prueba (incluye fuera de alcance: share, visitas, pedidos) — `docs/banco-preguntas.md`
 - [ ] Probar el modo modelo con `OPENROUTER_API_KEY` real (hoy vacía en `.env.local`) y correr el banco también en ese modo
 
 ## G5 — Acceso
-- [ ] Supabase Auth: invitación por correo (Resend), MFA TOTP
-- [ ] RLS por nivel: Estándar sin cliente_nombre/cliente_codigo; Plus completo
-- [ ] Perfiles y accesos (admin)
+- [x] Supabase Auth: invitación por correo, clave y 2FA TOTP obligatorio; recuperación de clave (pide el código si ya hay 2FA)
+- [x] Acceso en la base (`0006_acceso.sql`): funciones de lectura exigen aal2 + perfil activo; tablas de ventas sin acceso directo; bitácora por usuario con RLS
+- [x] Estándar sin detalle de clientes (solo agregados); `interno.exigir_acceso('plus')` listo para las funciones con detalle de cliente
+- [x] Perfiles y accesos (admin): invitar, reenviar, Estándar/Plus, admin, desactivar/reactivar
+- [x] `npm run invitar -- correo "Nombre" plus --admin` para el primer admin
+- [ ] Proyecto alojado: SMTP de Supabase con Resend (remitente del dominio de BIA), subir las plantillas de `supabase/templates`, Site URL = dominio de Vercel, activar TOTP, mismo `minimum_password_length` y `password_requirements`, `otp_expiry` 24 h
+- [ ] Invitar a Nati (Plus + admin) en el proyecto alojado y probar el flujo con su correo real
+- [ ] Vista para admin de la bitácora del asistente (hoy cada usuario solo ve la suya)
+- [ ] Definir con Nati quién es Plus y quién Estándar (S11: no hay matriz)
 
 ## G6 — Conocimiento
 - [ ] Subida de PDFs autorizados a Storage, extracción de texto, embeddings (pgvector), audiencia por nivel
