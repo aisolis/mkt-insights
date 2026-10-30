@@ -1,3 +1,4 @@
+import { accesoApi } from "@/lib/auth/acceso";
 import { leerParams, periodoComparado } from "@/lib/dashboard/params";
 import { topContribuyentes, versionVigente } from "@/lib/semantic/queries";
 
@@ -6,6 +7,8 @@ import { topContribuyentes, versionVigente } from "@/lib/semantic/queries";
  * todas las combinaciones ruta × canal y cifras exactas. Cada fila lleva versión y corte para trazabilidad.
  */
 export async function GET(request: Request) {
+  const usuario = await accesoApi();
+  if (usuario instanceof Response) return usuario;
   const version = await versionVigente();
   if (!version) return new Response("Sin versión publicada", { status: 404 });
 

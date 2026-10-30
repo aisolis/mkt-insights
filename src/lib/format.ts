@@ -21,6 +21,12 @@ export function fechaCorta(iso: string) {
   return `${String(d).padStart(2, "0")}-${mesCorto(m)}-${a}`;
 }
 
+const DIA_HN = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Tegucigalpa" });
+/** Fecha corta de un instante (timestamptz) en hora de Honduras, no en UTC. */
+export function fechaLocal(instante: string) {
+  return fechaCorta(DIA_HN.format(new Date(instante)));
+}
+
 /** Lempiras compactos: "L 140.2 M", "L 763", "−L 8.4 M". */
 export function lempirasCompacto(v: number) {
   const s = v < 0 ? "−" : "";

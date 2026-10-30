@@ -5,6 +5,7 @@ import { describirFiltros, rango } from "@/lib/asistente/texto";
 import { capital } from "@/lib/format";
 import { configModelo } from "@/lib/asistente/modelo";
 import { versionVigente } from "@/lib/semantic/queries";
+import { requerirAcceso } from "@/lib/auth/acceso";
 
 /** Pregunta sugerida según desde qué bloque del dashboard se llegó (?sobre=serie|canal|rutas). */
 const SOBRE: Record<string, (anio: number) => string> = {
@@ -14,6 +15,7 @@ const SOBRE: Record<string, (anio: number) => string> = {
 };
 
 export default async function Asistente(props: PageProps<"/asistente">) {
+  await requerirAcceso(); // el layout no se vuelve a ejecutar en cada navegación
   const version = await versionVigente();
   if (!version) {
     return <p className="rounded-lg border border-dashed border-neutral-300 p-10 text-center text-sm text-neutral-500">Todavía no hay una versión publicada.</p>;

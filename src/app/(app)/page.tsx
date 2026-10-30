@@ -8,8 +8,10 @@ import { advertencias, leerParams, periodoComparado, queryString } from "@/lib/d
 import { capital, conteo, fechaCorta, lempirasCompacto, periodoCorto, periodoLargo, precioKg, toneladas } from "@/lib/format";
 import { variacionPct, type Filtros as FiltrosT, type Kpi, type VersionVigente } from "@/lib/semantic/contracts";
 import { kpiPeriodo, serieMensual, topContribuyentes, variacionPorDimension, versionVigente } from "@/lib/semantic/queries";
+import { requerirAcceso } from "@/lib/auth/acceso";
 
 export default async function Inicio(props: PageProps<"/">) {
+  await requerirAcceso(); // el layout no se vuelve a ejecutar en cada navegación
   const version = await versionVigente();
   if (!version) return <SinVersion />;
 

@@ -1,0 +1,41 @@
+import "server-only";
+import { redirect } from "next/navigation";
+import { cache } from "react";
+import { createClient } from "@/lib/supabase/server";
+import { evaluarAcceso, type Acceso, type Claims, type FilaPerfil, type Usuario } from "./reglas";
+
+/**
+ * Capa de acceso: toda página, route handler y server action con datos pasa por aquí. El proxy solo redirige
+ * de forma optimista; la verificación real es esta (JWT verificado + aal2 + perfil activo) y la de la base.
+ */
+export const obtenerAcceso = cache(async (): Promise<Acceso> => {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims as Claims | undefined;
+  if (!claims?.sub || claims.aal !== "aal2") return evaluarAcceso(claims, null);
+  const { data: perfil } = await supabase.from("perfil").select("nombre, nivel, es_admin, activo").eq("user_id", claims.sub).maybeSingle<FilaPerfil>();
+  return evaluarAcceso(claims, perfil);
+});
+
+/** Para páginas: redirige al paso que falte. */
+export async function requerirAcceso(): Promise<Usuario> {
+  const acceso = await obtenerAcceso();
+  if (acceso.estado === "sin_sesion") redirect("/login");
+  if (acceso.estado === "sin_2fa") redirect("/auth/2fa");
+  if (acceso.estado === "sin_perfil") redirect("/auth/sin-acceso");
+  return acceso.usuario;
+}
+
+export async function requerirAdmin(): Promise<Usuario> {
+  const usuario = await requerirAcceso();
+  if (!usuario.esAdmin) redirect("/");
+  return usuario;
+}
+
+/** Para route handlers: el usuario o la respuesta 401/403 lista para devolver. */
+export async function accesoApi(): Promise<Usuario | Response> {
+  const acceso = await obtenerAcceso();
+  if (acceso.estado === "ok") return acceso.usuario;
+  if (acceso.estado === "sin_sesion") return Response.json({ error: "Sesión requerida" }, { status: 401 });
+  return Response.json({ error: acceso.estado === "sin_2fa" ? "Falta la verificación en dos pasos" : "Tu usuario no tiene un perfil activo" }, { status: 403 });
+}

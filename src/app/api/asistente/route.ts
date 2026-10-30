@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { accesoApi } from "@/lib/auth/acceso";
 import { configModelo } from "@/lib/asistente/modelo";
 import { responder } from "@/lib/asistente/responder";
 import { leerParams } from "@/lib/dashboard/params";
@@ -13,6 +14,8 @@ const Entrada = z.object({
 
 /** Pregunta al asistente sobre la versión publicada. Responde siempre con evidencia y queda en la bitácora. */
 export async function POST(request: Request) {
+  const usuario = await accesoApi();
+  if (usuario instanceof Response) return usuario;
   const entrada = Entrada.safeParse(await request.json().catch(() => null));
   if (!entrada.success) return Response.json({ error: "Pregunta inválida" }, { status: 400 });
 
@@ -23,7 +26,7 @@ export async function POST(request: Request) {
   const estado = leerParams(Object.fromEntries(new URLSearchParams(contexto)), version.metadatos.periodos);
   const modelo = configModelo();
   const inicio = Date.now();
-  const base = { version: version.version, contexto, pregunta, modelo: modelo?.modelo ?? null };
+  const base = { usuario_id: usuario.id, version: version.version, contexto, pregunta, modelo: modelo?.modelo ?? null };
   try {
     const respuesta = await responder(pregunta, historial, { fuente, version, estado }, modelo);
     await fuente.registrarConsultaAsistente({
