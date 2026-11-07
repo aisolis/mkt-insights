@@ -48,7 +48,9 @@ describe("advertencias", () => {
     expect(a).toContain("Octubre 2026 parcial: 12 días con venta, corte 15-oct-2026.");
     expect(a.some((t) => t.includes("sin certificar"))).toBe(false);
     const b = advertencias({ anio: 2026, mes: 9 }, { anio: 2026, mes: 8 }, periodos);
-    expect(b.some((t) => t.includes("Agosto 2026") && t.includes("sin certificar"))).toBe(true);
+    expect(b.some((t) => t.includes("sin certificar"))).toBe(false); // jul-2025 en adelante cuadra con el resumen de BIA
+    const c = advertencias({ anio: 2025, mes: 9 }, { anio: 2025, mes: 6 }, periodos);
+    expect(c.some((t) => t.includes("Junio 2025") && t.includes("sin certificar"))).toBe(true);
   });
   it("avisa cuando el periodo comparado no tiene datos", () => {
     const a = advertencias({ anio: 2026, mes: 1 }, { anio: 2025, mes: 12 }, periodos);

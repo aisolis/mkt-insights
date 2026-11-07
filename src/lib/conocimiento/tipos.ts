@@ -52,7 +52,9 @@ export type Buscador = (consulta: string) => Promise<Encontrado[]>;
  * Relevante para mostrarse sin que el modelo lo elija: comparte al menos 2 términos con la pregunta (o todos si
  * la pregunta tiene uno solo), o es semánticamente cercano. Evita citar un estudio solo porque dice "venta".
  */
-export function esRelevante(e: Encontrado, umbralSimilitud = 0.55) {
+// Umbral de baai/bge-m3: con un estudio de prueba, las preguntas relacionadas (incluidas paráfrasis sin palabras en
+// común) dieron 0.53–0.63 y las no relacionadas 0.36–0.46. Recalibrar con estudios reales.
+export function esRelevante(e: Encontrado, umbralSimilitud = 0.5) {
   if (e.similitud !== null && e.similitud >= umbralSimilitud) return true;
   return e.coincidencias >= Math.min(2, e.terminos);
 }

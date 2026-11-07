@@ -17,9 +17,11 @@ export function esParcial(m: Mes) {
   return Number(m.ultimo_dia.slice(8, 10)) < ultimoDiaDelMes(m) - 2;
 }
 
-export function alertasCarga(carga: Mes[], vigente: Mes[], hoy: string): Alerta[] {
+export function alertasCarga(carga: Mes[], vigente: Mes[], hoy: string, hojasIgnoradas: string[] = []): Alerta[] {
   const a: Alerta[] = [];
   if (!carga.length) return [{ nivel: "bloqueo", texto: "La carga no tiene filas." }];
+  if (hojasIgnoradas.length)
+    a.push({ nivel: "revisar", texto: `No se cargaron hojas sin el formato del cubo: ${hojasIgnoradas.map((h) => `«${h}»`).join(", ")}. Si alguna tenía ventas línea por línea, expórtala con las 24 columnas.` });
   const nuevos = [...carga].sort((x, y) => clave(x) - clave(y));
   const porClave = new Map(vigente.map((m) => [clave(m), m]));
   const compuesto = new Map([...porClave, ...nuevos.map((m) => [clave(m), m] as const)]);
@@ -44,7 +46,9 @@ export function alertasCarga(carga: Mes[], vigente: Mes[], hoy: string): Alerta[
     if (antes) {
       const dv = pct(m.venta_neta, antes.venta_neta), df = pct(m.filas, antes.filas);
       const cambio = `venta neta ${lempirasCompacto(antes.venta_neta)} → ${lempirasCompacto(m.venta_neta)} (${pctTxt(dv)}), filas ${conteo(antes.filas)} → ${conteo(m.filas)}`;
-      if (Math.abs(dv ?? 100) > 1 || Math.abs(df ?? 100) > 1) a.push({ nivel: "revisar", texto: `Reemplaza ${nombre}: ${cambio}.` });
+      // Si lo publicado era un mes parcial, el salto es esperable: se dice para que no asuste.
+      const completa = m.ultimo_dia > antes.ultimo_dia ? ` Lo publicado llegaba solo hasta el ${fechaCorta(antes.ultimo_dia)}; este archivo completa el mes.` : "";
+      if (Math.abs(dv ?? 100) > 1 || Math.abs(df ?? 100) > 1) a.push({ nivel: "revisar", texto: `Reemplaza ${nombre}: ${cambio}.${completa}` });
       else a.push({ nivel: "info", texto: `Reemplaza ${nombre} sin cambios relevantes (${pctTxt(dv)} en venta neta).` });
       if (m.ultimo_dia < antes.ultimo_dia)
         a.push({ nivel: "revisar", texto: `${nombre} llega hasta el ${fechaCorta(m.ultimo_dia)}, pero lo publicado llegaba hasta el ${fechaCorta(antes.ultimo_dia)}: se perderían días.` });

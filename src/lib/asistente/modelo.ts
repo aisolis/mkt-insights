@@ -14,7 +14,7 @@ export type ConfigModelo = { apiKey: string; modelo: string; url?: string; fetch
 
 export function configModelo(): ConfigModelo | null {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  return apiKey ? { apiKey, modelo: process.env.OPENROUTER_MODEL?.trim() || "anthropic/claude-sonnet-5.5" } : null;
+  return apiKey ? { apiKey, modelo: process.env.OPENROUTER_MODEL?.trim() || "deepseek/deepseek-v4.1-flash" } : null;
 }
 
 type Mensaje =

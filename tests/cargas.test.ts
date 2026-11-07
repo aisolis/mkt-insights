@@ -49,6 +49,10 @@ describe("alertas de carga", () => {
     expect(esParcial(mes(2026, 2, 1, { ultimo_dia: "2026-02-27" }))).toBe(false);
   });
 
+  it("hojas que no son del cubo: revisar", () => {
+    expect(alertasCarga([mes(2026, 9, 140e6)], vigente, hoy, ["1. Resumen por canal"])[0]).toMatchObject({ nivel: "revisar", texto: expect.stringMatching(/«1\. Resumen por canal»/) });
+  });
+
   it("archivo con toda la historia: lo avisa", () => {
     expect(alertasCarga(vigente, vigente, hoy).some((x) => /reemplaza toda la historia/.test(x.texto))).toBe(true);
   });
@@ -98,11 +102,11 @@ describe.skipIf(!url || !service)("carga mensual contra el Supabase local", () =
 
   it("octubre completo: valida, alerta, publica reemplazando solo octubre y se retira", { timeout: 180_000 }, async () => {
     const filas = dias(2026, 10, 28).flatMap((fecha) => [{ fecha, canal, ventaNeta: 1000 }, { fecha, canal, ventaNeta: 500, duplicar: fecha.getUTCDate() === 1 }]);
-    const archivo = await xlsxDePrueba(filas);
+    const archivo = await xlsxDePrueba(filas, undefined, true);
     const id = await subir("octubre-2026-prueba.xlsx", archivo);
 
     const r = await procesarCarga(svc, id);
-    expect(r).toMatchObject({ estado: "validada", conteo: { cargadas: 57, duplicados: 1, desde: "2026-10-01", hasta: "2026-10-28" } });
+    expect(r).toMatchObject({ estado: "validada", conteo: { cargadas: 57, duplicados: 1, desde: "2026-10-01", hasta: "2026-10-28", hojasIgnoradas: ["1. Resumen por canal"] } });
     const mismo = await subir("copia.xlsx", archivo);
     expect(await procesarCarga(svc, mismo)).toMatchObject({ estado: "con_errores", error: expect.stringMatching(/ya se cargó/) });
 

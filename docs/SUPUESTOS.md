@@ -2,7 +2,7 @@
 
 | ID | Supuesto | Origen del vacío | Impacto si cambia |
 |---|---|---|---|
-| S1 | Hoja 1 (1,000,000 filas) puede estar truncada; ene-2025→ago-2026 se marca "sin certificar" hasta reexportación | Conteo exacto redondo | Totales históricos |
+| S1 | Hoja 1 (1,000,000 filas) podía estar truncada. El resumen trimestral de BIA (6-nov-2026) cuadra al centavo desde jul-2025; ene–jun 2025 difiere en L 415 mil (0.05 %) y solo esos meses quedan "sin certificar" — `docs/revision-data-intelia.md` | Conteo exacto redondo | Totales históricos |
 | S2 | Canales se homologan a 6 valores con `supabase/seed/homologacion_canal.csv`; Grupo y Subgrupo igual | 18 variantes de escritura | Agregados por canal |
 | S3 | Duplicados exactos y 153 discrepancias se conservan y se marcan con flag | Sin regla de BI | Totales ±L 384 k |
 | S4 | Cliente con compra = venta neta > 0 en periodo, clave (empresa, código) | Sin definición | KPI 4 |

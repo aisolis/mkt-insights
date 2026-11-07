@@ -30,15 +30,17 @@ function fecha(v: unknown): { d: Date; serial: boolean } {
 }
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-export type Conteo = { leidas: number; vacias: number; cargadas: number; duplicados: number; discrepancias: number; seriales: number; desde: string; hasta: string };
+/** hojasIgnoradas: hojas del libro sin el formato del cubo (resúmenes, tablas dinámicas); se avisan antes de publicar. */
+export type Conteo = { leidas: number; vacias: number; cargadas: number; duplicados: number; discrepancias: number; seriales: number; desde: string; hasta: string; hojasIgnoradas: string[] };
 
-/** Lee el Excel e inserta las filas de la carga. Error con hoja y fila si algo no cuadra. */
+/** Lee el Excel e inserta las filas de las hojas con el formato del cubo; las demás hojas se saltan y se informan.
+ * Error con hoja y fila si una fila no cuadra, o si ninguna hoja tiene el formato. */
 export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada: string | Readable, avance?: (n: number) => void): Promise<Conteo> {
   const { data: h, error: eh } = await svc.schema("ventas").from("homologacion").select("valor_origen, valor_homologado").eq("dimension", "canal");
   if (eh) throw new Error(`homologación: ${eh.message}`);
   const homol = new Map(h.map((r) => [r.valor_origen, r.valor_homologado]));
   const vistos = new Set<string>();
-  const c: Conteo = { leidas: 0, vacias: 0, cargadas: 0, duplicados: 0, discrepancias: 0, seriales: 0, desde: "9999-12-31", hasta: "0000-01-01" };
+  const c: Conteo = { leidas: 0, vacias: 0, cargadas: 0, duplicados: 0, discrepancias: 0, seriales: 0, desde: "9999-12-31", hasta: "0000-01-01", hojasIgnoradas: [] };
   let lote: Record<string, unknown>[] = [];
 
   const vaciar = async () => {
@@ -56,18 +58,23 @@ export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada:
   // Ante el primer error se deja de procesar pero se termina de leer el archivo: cortar el lector de ExcelJS a
   // mitad de camino a veces revienta con un error interno que tapa el nuestro.
   let falla: string | null = null;
+  let primerFormato: string | null = null;
   for await (const ws of libro) {
     // @ts-expect-error name existe en el reader de streaming
     const hoja: string = ws.name;
     if (!HOJAS_HECHOS(hoja)) continue;
-    hojas++;
+    let saltar = false;
     for await (const row of ws) {
-      if (falla) continue;
+      if (falla || saltar) continue;
       const vals = (row.values as unknown[]).slice(1);
       if (row.number === 1) {
         const cab = vals.map(txt);
         const i = COLS.findIndex((col, j) => cab[j] !== col);
-        if (i >= 0) falla = `Hoja «${hoja}»: la columna ${i + 1} debería ser «${COLS[i]}» y es «${cab[i] ?? ""}». Exporta con el mismo formato del cubo.`;
+        if (i >= 0) {
+          saltar = true;
+          c.hojasIgnoradas.push(hoja);
+          primerFormato ??= `Hoja «${hoja}»: la columna ${i + 1} debería ser «${COLS[i]}» y es «${cab[i] ?? ""}». Exporta con el mismo formato del cubo.`;
+        } else hojas++;
         continue;
       }
       c.leidas++;
@@ -107,7 +114,7 @@ export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada:
   }
   if (falla) throw new Error(falla);
   await vaciar();
-  if (!hojas) throw new Error("El archivo no tiene hojas con datos de venta.");
+  if (!hojas) throw new Error(primerFormato ?? "El archivo no tiene hojas con datos de venta.");
   if (!c.cargadas) throw new Error("El archivo no tiene filas de venta.");
   return c;
 }
@@ -116,7 +123,7 @@ export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada:
 export async function cerrarCarga(svc: SupabaseClient, cargaId: string, c: Conteo) {
   const up = await svc.schema("ventas").from("carga").update({
     filas_leidas: c.leidas, filas_vacias: c.vacias, filas_cargadas: c.cargadas,
-    filas_duplicadas: c.duplicados, filas_discrepancia: c.discrepancias, fechas_serial: c.seriales,
+    filas_duplicadas: c.duplicados, filas_discrepancia: c.discrepancias, fechas_serial: c.seriales, hojas_ignoradas: c.hojasIgnoradas,
   }).eq("id", cargaId);
   if (up.error) throw new Error(`carga: ${up.error.message}`);
   const { error } = await svc.schema("ventas").rpc("cerrar_carga", { p_carga: cargaId });

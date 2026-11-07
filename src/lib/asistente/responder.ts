@@ -128,7 +128,7 @@ function evidencia(resultados: Resultado[], ctx: Contexto, avisos: string[]): Ev
     const anio = Number(serie.argumentos.anio);
     if (!meta.periodos.some((p) => p.anio === anio - 1)) adv.push(`${anio - 1} no tiene datos en esta versión: la línea del año anterior queda vacía.`);
     if (anio - 1 <= S1_SIN_CERTIFICAR_HASTA.anio || anio <= S1_SIN_CERTIFICAR_HASTA.anio)
-      adv.push(`Los meses hasta ${periodoLargo(S1_SIN_CERTIFICAR_HASTA)} están sin certificar: la hoja ene-2025–ago-2026 puede estar truncada (S1).`);
+      adv.push(`Los meses hasta ${periodoLargo(S1_SIN_CERTIFICAR_HASTA)} están sin certificar, con diferencias menores contra el resumen trimestral que envió BIA: ene–jun 2025 suma L 415 mil más ahí (0.05 %) (S1).`);
     if (meta.periodos.some((p) => p.anio === anio && !p.cerrado)) adv.push("El último mes de la serie es parcial.");
   }
   if (!version.conciliada_bi) adv.push("Cifras verificadas contra el Excel exportado, todavía no conciliadas con el reporte de BI.");

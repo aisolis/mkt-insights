@@ -31,8 +31,13 @@ export async function mesesDeCargas(cargaIds: string[]) {
 }
 
 export async function alertasDe(cargaIds: string[]): Promise<Map<string, Alerta[]>> {
-  const { porCarga, vigente } = await mesesParaAlertas(createServiceClient(), cargaIds);
-  return new Map(cargaIds.map((id) => [id, alertasCarga(porCarga.get(id) ?? [], vigente, hoyHN())]));
+  const svc = createServiceClient();
+  const [{ porCarga, vigente }, hojas] = await Promise.all([
+    mesesParaAlertas(svc, cargaIds),
+    svc.schema("ventas").from("carga").select("id, hojas_ignoradas").in("id", cargaIds),
+  ]);
+  const ignoradas = new Map((hojas.data ?? []).map((c) => [c.id as string, (c.hojas_ignoradas ?? []) as string[]]));
+  return new Map(cargaIds.map((id) => [id, alertasCarga(porCarga.get(id) ?? [], vigente, hoyHN(), ignoradas.get(id))]));
 }
 
 export const MetaCarga = z.object({

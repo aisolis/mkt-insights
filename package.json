@@ -12,6 +12,7 @@
     "publicar": "tsx scripts/publicar.ts",
     "invitar": "tsx scripts/invitar.ts",
     "conocimiento:embeddings": "tsx scripts/conocimiento-embeddings.ts",
+    "banco:modelo": "tsx scripts/banco-modelo.ts",
     "db:start": "supabase start",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",

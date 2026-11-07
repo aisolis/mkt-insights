@@ -7,8 +7,14 @@ import { COLS } from "@/lib/cargas/ingesta";
 
 export type FilaPrueba = { fecha: Date; canal: string; ventaNeta: number; kg?: number; duplicar?: boolean };
 
-export async function xlsxDePrueba(filas: FilaPrueba[], columnas: readonly string[] = COLS): Promise<Buffer> {
+/** `resumen`: agrega antes una hoja con otro formato (como los resúmenes que vienen junto a la exportación). */
+export async function xlsxDePrueba(filas: FilaPrueba[], columnas: readonly string[] = COLS, resumen = false): Promise<Buffer> {
   const libro = new ExcelJS.Workbook();
+  if (resumen) {
+    const r = libro.addWorksheet("1. Resumen por canal");
+    r.addRow(["Año", "Canal BIA", "Kilos", "Venta_Neta"]);
+    r.addRow([2026, "Mayoreo", 10, 1000]);
+  }
   const hoja = libro.addWorksheet("Hoja1");
   hoja.addRow([...columnas]);
   filas.forEach((f, i) => {

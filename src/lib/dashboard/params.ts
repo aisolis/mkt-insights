@@ -11,8 +11,11 @@ type SearchParams = Record<string, string | string[] | undefined>;
 /** Parámetro de URL → clave de Filtros. "producto" es art_codigo en el contrato. */
 const FILTROS_URL = [["canal", "canal"], ["ruta", "ruta"], ["marca", "marca"], ["producto", "art_codigo"]] as const;
 
-/** S1: la hoja "Ene 025-Ago 026" trae exactamente 1,000,000 filas (probable corte de exportación). */
-export const S1_SIN_CERTIFICAR_HASTA: Periodo = { anio: 2026, mes: 8 };
+/**
+ * S1: la hoja "Ene 025-Ago 026" trae exactamente 1,000,000 filas. El resumen trimestral que envió BIA (6-nov-2026)
+ * coincide al centavo desde jul-2025; ene–jun 2025 difiere en L 415 mil (0.05 %). Solo esos meses quedan marcados.
+ */
+export const S1_SIN_CERTIFICAR_HASTA: Periodo = { anio: 2025, mes: 6 };
 
 const uno = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)?.trim() || undefined;
 const clave = (p: Periodo) => p.anio * 100 + p.mes;
@@ -61,6 +64,6 @@ export function advertencias(periodo: Periodo, comparado: Periodo, periodos: Per
   }
   const sinCertificar = [periodo, comparado].filter((p) => clave(p) <= clave(S1_SIN_CERTIFICAR_HASTA)).map((p) => capital(periodoLargo(p)));
   if (sinCertificar.length)
-    out.push(`${sinCertificar.join(" y ")} sin certificar: la hoja ene-2025–ago-2026 trae exactamente 1,000,000 filas y puede estar truncada (S1).`);
+    out.push(`${sinCertificar.join(" y ")} sin certificar, con diferencias menores contra el resumen trimestral que envió BIA: ene–jun 2025 suma L 415 mil más ahí (0.05 %) (S1).`);
   return [...new Set(out)];
 }
