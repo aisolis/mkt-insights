@@ -64,8 +64,9 @@ describe.skipIf(!url || !key)("banco de preguntas (Supabase local)", () => {
     };
     const fuente = crearConsultas(rpc);
     const version = (await fuente.versionVigente()) as VersionVigente;
-    // Contexto como si viniera de "Preguntar al asistente" en el dashboard por defecto (último mes cerrado).
-    ctx = { fuente, version, estado: leerParams({}, version.metadatos.periodos) };
+    // Contexto como si viniera de "Preguntar al asistente" en el dashboard en septiembre 2026: fijo, para que el
+    // banco no cambie cuando se publica un mes nuevo (las expectativas son sobre septiembre vs. agosto).
+    ctx = { fuente, version, estado: leerParams({ periodo: "2026-09" }, version.metadatos.periodos) };
   });
 
   it("tiene 15 preguntas, 5 fuera de alcance", () => {
