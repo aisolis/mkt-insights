@@ -114,7 +114,7 @@
 - [x] Nombre principal y alternativos con prioridad: si vienen varios se usa el de mayor prioridad, sin error
 - [x] Arreglo desde el probador: sugiere la columna que sobra para el dato que falta («Usar «Kilos» para kilos»), elegir otra, saltar una hoja de resumen y probar un cambio sin guardarlo
 - [x] Crítica de diseño (Impeccable, 23/40) aplicada: datos en 4 grupos, formato del archivo junto al probador, publicar con resumen de lo que cambia («Publicar vN», motivo del bloqueo), foco visible, botones ≥ 32 px, íconos con texto para lector de pantalla, tabla de versiones apilada en el celular, selector de archivo en español
-- [ ] Restaurar los nombres del cubo por dato y revertir un cambio desde el historial (P2 de la crítica)
+- [x] Restaurar el nombre del cubo por dato y «Volver a como estaba» desde el historial (solo el último cambio de cada dato y si nada lo cambió después; el deshacer también queda en el historial)
 - [ ] Equivalencias de valores para más dimensiones (hoy solo canal): grupo, subgrupo y sucursal ya están previstas en `ventas.homologacion`
 - [ ] Formato de números con coma decimal ("1.234,56") si BIA llega a exportar así
 - [ ] Proyecto alojado: aplicar `0019_columnas_carga.sql`

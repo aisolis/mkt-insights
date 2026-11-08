@@ -3,7 +3,7 @@
  * La ingesta con la base (alias, columnas que faltan, fila de encabezados) está en cargas.test.ts.
  */
 import { describe, expect, it } from "vitest";
-import { CAMPOS, camposVacios, ENCABEZADOS_CUBO, GRUPOS, hojaExcluida, leerEncabezados, motivoHoja, NOMBRE_CUBO, normalizarEncabezado, sugerencias, type Campo, type MapeoCarga } from "@/lib/cargas/columnas";
+import { CAMPOS, camposVacios, ENCABEZADOS_CUBO, esDeFabrica, GRUPOS, hojaExcluida, leerEncabezados, motivoHoja, NOMBRE_CUBO, normalizarEncabezado, revertibles, sugerencias, type CambioColumnas, type Campo, type MapeoCarga } from "@/lib/cargas/columnas";
 
 const INICIAL: Record<Campo, string> = {
   fecha: "Fecha", ruta: "Ruta", empresa: "Empresa", marca: "Marca", categoria: "Café/Rep", proveedor: "Proveedor", cliente_codigo: "Cliente Codigo",
@@ -130,5 +130,26 @@ describe("columnas del Excel", () => {
     expect(new Set(todos).size).toBe(22);
     expect(todos.sort()).toEqual(Object.keys(CAMPOS).sort());
     expect(Object.values(NOMBRE_CUBO).every((n) => (ENCABEZADOS_CUBO as readonly string[]).includes(n))).toBe(true);
+  });
+
+  it("de fábrica: solo el nombre del cubo y obligatoria", () => {
+    const m = mapeo({ kg: { encabezados: ["Kg", "Kilos"] }, zona: { obligatoria: false } });
+    const de = (c: Campo) => esDeFabrica(m.columnas.find((x) => x.campo === c)!);
+    expect([de("fecha"), de("kg"), de("zona")]).toEqual([true, false, false]);
+  });
+
+  it("solo se deshace el último cambio de cada dato, y si nada lo cambió después", () => {
+    const cambio = (id: number, campo: string | null, antes: CambioColumnas["antes"], despues: CambioColumnas["despues"]): CambioColumnas =>
+      ({ id, tipo: campo ? "columna" : "formato", campo, antes, despues, usuario: null, creado_en: `2026-11-08T10:0${id}:00Z` });
+    const m = mapeo({ kg: { encabezados: ["Kg", "Kilos"] } });
+    m.hojasExcluidas = ["Desgloce", "Resumen"];
+    const cambios = [
+      cambio(1, "kg", { encabezados: ["Kg"], obligatoria: true }, { encabezados: ["Kg", "Peso"], obligatoria: true }),
+      cambio(2, "kg", { encabezados: ["Kg", "Peso"], obligatoria: true }, { encabezados: ["Kg", "Kilos"], obligatoria: true }),
+      cambio(3, "zona", { encabezados: ["Zona"], obligatoria: true }, { encabezados: ["Zona", "Región"], obligatoria: true }),
+      cambio(4, null, { fila_encabezado: 1, hojas_excluidas: ["Desgloce"] }, { fila_encabezado: 1, hojas_excluidas: ["Desgloce", "Resumen"] }),
+    ];
+    // 1: hubo otro cambio de kg después. 2: es el último y sigue vigente. 3: zona ya no tiene «Región» (cambió por fuera). 4: formato vigente.
+    expect([...revertibles(cambios, m)].sort()).toEqual([2, 4]);
   });
 });

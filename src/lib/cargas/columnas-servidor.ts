@@ -2,7 +2,7 @@ import "server-only";
 import { Readable } from "node:stream";
 import { z } from "zod";
 import { createServiceClient } from "@/lib/supabase/server";
-import { CAMPOS, esCampo, normalizarEncabezado, type Campo, type ColumnasHoja, type MapeoCarga } from "./columnas";
+import { CAMPOS, esCampo, NOMBRE_CUBO, normalizarEncabezado, revertibles, type CambioColumnas, type Campo, type ColumnasHoja, type MapeoCarga } from "./columnas";
 import { leerMapeo, ordenarXlsx, probarXlsx, type PruebaHoja } from "./ingesta";
 import { BUCKET_CARGAS, MAX_BYTES_CARGA } from "./tipos";
 
@@ -19,12 +19,7 @@ export async function configColumnas(): Promise<ConfigColumnas> {
   return { ...mapeo, actualizadaEn: f.data?.actualizada_en ?? null };
 }
 
-export type CambioColumnas = {
-  id: number; tipo: "columna" | "formato"; campo: string | null;
-  antes: { encabezados?: string[]; obligatoria?: boolean; fila_encabezado?: number; hojas_excluidas?: string[] } | null;
-  despues: { encabezados?: string[]; obligatoria?: boolean; fila_encabezado?: number; hojas_excluidas?: string[] } | null;
-  usuario: string | null; creado_en: string;
-};
+export type { CambioColumnas };
 
 export async function bitacoraColumnas(limite = 20): Promise<CambioColumnas[]> {
   const svc = createServiceClient();
@@ -125,4 +120,23 @@ export async function saltarHoja(hoja: string, usuario: string) {
   const c = await configColumnas();
   if (c.hojasExcluidas.some((h) => normalizarEncabezado(h) === normalizarEncabezado(hoja))) return { accion: "sin_cambios" };
   return guardarFormato({ fila: c.filaEncabezado, hojas: [...c.hojasExcluidas, hoja] }, usuario);
+}
+
+/** Deja un dato como viene de fábrica: el nombre del cubo, sin alternativos y obligatorio. Queda en la bitácora. */
+export function restaurarCampo(campo: Campo, usuario: string) {
+  return guardarColumna({ campo, encabezados: [NOMBRE_CUBO[campo]], obligatoria: true }, usuario);
+}
+
+/** Deshace un cambio de la bitácora volviendo a lo que había antes. Solo el último de cada dato y si nada lo cambió después. */
+export async function revertirCambio(id: number, usuario: string): Promise<{ error?: string; accion?: string; cambio?: CambioColumnas }> {
+  const [cambios, config] = await Promise.all([bitacoraColumnas(200), configColumnas()]);
+  const c = cambios.find((x) => x.id === id);
+  if (!c || !c.antes) return { error: "Ese cambio ya no está en el historial." };
+  if (!revertibles(cambios, config).has(id)) return { error: "Ese cambio ya no se puede deshacer: hubo otro cambio después. Recarga la página." };
+  const antes = c.antes;
+  let r: { error?: string; accion?: string };
+  if (c.tipo === "formato") r = await guardarFormato({ fila: antes.fila_encabezado ?? 1, hojas: antes.hojas_excluidas ?? [] }, usuario);
+  else if (c.campo && esCampo(c.campo)) r = await guardarColumna({ campo: c.campo, encabezados: antes.encabezados ?? [], obligatoria: antes.obligatoria ?? true }, usuario);
+  else r = { error: "Ese dato ya no existe." };
+  return { ...r, cambio: c };
 }

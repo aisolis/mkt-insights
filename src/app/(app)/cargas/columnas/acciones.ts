@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { requerirGestorCargas } from "@/lib/auth/acceso";
 import { CAMPOS, esCampo } from "@/lib/cargas/columnas";
-import { agregarNombre, DatosColumna, DatosFormato, guardarColumna, guardarFormato, probarCarga, saltarHoja, separarLineas } from "@/lib/cargas/columnas-servidor";
+import { agregarNombre, DatosColumna, DatosFormato, guardarColumna, guardarFormato, probarCarga, restaurarCampo, revertirCambio, saltarHoja, separarLineas } from "@/lib/cargas/columnas-servidor";
 
 export type Estado = { error?: string; ok?: string } | null;
 
@@ -81,4 +81,25 @@ export async function guardarFormatoAccion(_: Estado, form: FormData): Promise<E
   if (r.error) return { error: r.error };
   revalidatePath("/cargas/columnas");
   return r.accion === "sin_cambios" ? { ok: "No había nada que cambiar." } : { ok: `Guardado.${DESPUES}` };
+}
+
+export async function restaurarCampoAccion(_: Estado, form: FormData): Promise<Estado> {
+  const usuario = await requerirGestorCargas();
+  const campo = String(form.get("campo") ?? "");
+  if (!esCampo(campo)) return { error: "Ese dato no existe." };
+  const r = await restaurarCampo(campo, usuario.id);
+  if (r.error) return { error: r.error };
+  revalidatePath("/cargas/columnas");
+  return r.accion === "sin_cambios" ? { ok: "Ya estaba como viene del cubo." } : { ok: `${CAMPOS[campo].etiqueta} volvió al nombre del cubo.${DESPUES}` };
+}
+
+export async function revertirCambioAccion(_: Estado, form: FormData): Promise<Estado> {
+  const usuario = await requerirGestorCargas();
+  const id = Number(form.get("id"));
+  if (!Number.isInteger(id) || id <= 0) return { error: "Cambio no válido." };
+  const r = await revertirCambio(id, usuario.id);
+  if (r.error) return { error: r.error };
+  revalidatePath("/cargas/columnas");
+  const que = r.cambio?.tipo === "formato" ? "El formato del archivo" : etiqueta(r.cambio?.campo ?? "");
+  return { ok: `${que} volvió a como estaba. El deshacer también queda en el historial.` };
 }

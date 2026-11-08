@@ -3,7 +3,7 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { agregarNombreAccion, guardarColumnaAccion, guardarFormatoAccion, probarBorradorAccion, saltarHojaAccion, type Estado } from "./acciones";
+import { agregarNombreAccion, guardarColumnaAccion, guardarFormatoAccion, probarBorradorAccion, restaurarCampoAccion, revertirCambioAccion, saltarHojaAccion, type Estado } from "./acciones";
 
 function Aviso({ estado }: { estado: Estado }) {
   if (!estado?.error && !estado?.ok) return null;
@@ -121,6 +121,38 @@ export function FormFormato({ fila, hojas }: { fila: number; hojas: string[] }) 
         <Button type="submit" disabled={enviando}>{enviando ? "Guardando…" : "Guardar formato"}</Button>
         <Aviso estado={estado} />
       </div>
+    </form>
+  );
+}
+
+/**
+ * Vuelve un dato al nombre del cubo (sin alternativos, obligatorio). Se queda montado aunque ya esté de fábrica para
+ * que el aviso de lo que pasó no desaparezca con el botón.
+ */
+export function RestaurarCampo({ campo, nombreCubo, deFabrica }: { campo: string; nombreCubo: string; deFabrica: boolean }) {
+  const [estado, accion, enviando] = useActionState(restaurarCampoAccion, null);
+  if (deFabrica) return estado ? <Aviso estado={estado} /> : null;
+  return (
+    <form action={accion} className="space-y-1 border-t border-neutral-200 pt-3">
+      <input type="hidden" name="campo" value={campo} />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" variant="outline" disabled={enviando}>{enviando ? "Restaurando…" : `Restaurar «${nombreCubo}»`}</Button>
+        <span className="text-xs text-neutral-500">Deja solo el nombre del cubo, sin alternativos y obligatoria.</span>
+      </div>
+      <Aviso estado={estado} />
+    </form>
+  );
+}
+
+/** Deshacer un cambio del historial: vuelve a lo que había antes y deja su propia fila en el historial. */
+export function RevertirCambio({ id, disponible }: { id: number; disponible: boolean }) {
+  const [estado, accion, enviando] = useActionState(revertirCambioAccion, null);
+  if (!disponible) return estado ? <Aviso estado={estado} /> : null;
+  return (
+    <form action={accion} className="inline-flex flex-col items-start gap-1">
+      <input type="hidden" name="id" value={id} />
+      <Button type="submit" variant="outline" size="sm" className="h-8" disabled={enviando}>{enviando ? "Deshaciendo…" : "Volver a como estaba"}</Button>
+      <Aviso estado={estado} />
     </form>
   );
 }

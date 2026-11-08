@@ -192,3 +192,38 @@ export function sugerencias(l: LecturaHoja, m: MapeoCarga): { campo: Campo; enca
   }
   return r;
 }
+
+/** Un cambio de la bitácora de columnas (ventas.columna_carga_cambio). */
+export type CambioColumnas = {
+  id: number; tipo: "columna" | "formato"; campo: string | null;
+  antes: { encabezados?: string[]; obligatoria?: boolean; fila_encabezado?: number; hojas_excluidas?: string[] } | null;
+  despues: { encabezados?: string[]; obligatoria?: boolean; fila_encabezado?: number; hojas_excluidas?: string[] } | null;
+  usuario: string | null; creado_en: string;
+};
+
+/** Como viene de fábrica: solo el nombre del cubo y obligatoria. */
+export const esDeFabrica = (c: ColumnaCarga) => c.obligatoria && c.encabezados.length === 1 && c.encabezados[0] === NOMBRE_CUBO[c.campo];
+
+const iguales = (a: readonly string[] | undefined, b: readonly string[] | undefined) => !!a && !!b && a.length === b.length && a.every((x, i) => x === b[i]);
+
+/**
+ * Cambios que se pueden deshacer: el último de cada dato (o del formato), y solo si lo que dejó sigue igual. Deshacer
+ * uno más viejo pisaría los cambios que vinieron después.
+ */
+export function revertibles(cambios: CambioColumnas[], m: MapeoCarga): Set<number> {
+  const vistos = new Set<string>(), r = new Set<number>();
+  const recientes = [...cambios].sort((a, b) => b.creado_en.localeCompare(a.creado_en) || b.id - a.id);
+  for (const c of recientes) {
+    const clave = c.tipo === "formato" ? "formato" : `columna:${c.campo}`;
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
+    if (!c.antes || !c.despues) continue;
+    if (c.tipo === "formato") {
+      if (c.despues.fila_encabezado === m.filaEncabezado && iguales(c.despues.hojas_excluidas, m.hojasExcluidas)) r.add(c.id);
+    } else {
+      const actual = m.columnas.find((x) => x.campo === c.campo);
+      if (actual && iguales(c.despues.encabezados, actual.encabezados) && c.despues.obligatoria === actual.obligatoria) r.add(c.id);
+    }
+  }
+  return r;
+}

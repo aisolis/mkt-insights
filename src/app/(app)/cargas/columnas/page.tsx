@@ -3,12 +3,12 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { requerirGestorCargas } from "@/lib/auth/acceso";
-import { CAMPOS, GRUPOS, NOMBRE_CUBO, sugerencias, TIPOS, type Campo, type ColumnaCarga, type LecturaHoja, type MapeoCarga } from "@/lib/cargas/columnas";
+import { CAMPOS, esDeFabrica, GRUPOS, NOMBRE_CUBO, revertibles, sugerencias, TIPOS, type Campo, type ColumnaCarga, type LecturaHoja, type MapeoCarga } from "@/lib/cargas/columnas";
 import { bitacoraColumnas, cargasParaProbar, configColumnas, probarCarga, type CambioColumnas, type Prueba } from "@/lib/cargas/columnas-servidor";
 import type { PruebaHoja } from "@/lib/cargas/ingesta";
 import { fechaLocal } from "@/lib/format";
 import { Reintentar } from "../formularios";
-import { ArreglarDato, CLASE_LISTA, FormColumna, FormFormato, SaltarHoja } from "./formularios";
+import { ArreglarDato, CLASE_LISTA, FormColumna, FormFormato, RestaurarCampo, RevertirCambio, SaltarHoja } from "./formularios";
 
 /** Leer el archivo para probarlo tarda unos segundos con un mes completo. */
 export const maxDuration = 60;
@@ -35,6 +35,7 @@ export default async function Columnas(props: PageProps<"/cargas/columnas">) {
   ]);
   const archivo = prueba && !("error" in prueba) ? prueba.carga.nombre_archivo : null;
   const porCampo = new Map(config.columnas.map((c) => [c.campo, c]));
+  const deshacibles = revertibles(cambios, config);
 
   return (
     <div className="space-y-8">
@@ -111,11 +112,12 @@ export default async function Columnas(props: PageProps<"/cargas/columnas">) {
         {cambios.length === 0 ? (
           <p className="text-sm text-neutral-500">Todavía no hay cambios: se usan los nombres de la exportación del cubo.</p>
         ) : (
-          <ul className="max-w-3xl space-y-1 border border-neutral-200 bg-white p-4 text-sm">
+          <ul className="max-w-3xl space-y-2 border border-neutral-200 bg-white p-4 text-sm">
             {cambios.map((c) => (
-              <li key={c.id} className="flex flex-wrap gap-x-2">
+              <li key={c.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="text-neutral-500 tabular-nums">{fechaLocal(c.creado_en)}</span>
-                <span>{c.usuario ?? "Alguien"} {descripcion(c)}</span>
+                <span className="min-w-0">{c.usuario ?? "Alguien"} {descripcion(c)}</span>
+                <RevertirCambio id={c.id} disponible={deshacibles.has(c.id)} />
               </li>
             ))}
           </ul>
@@ -154,6 +156,7 @@ function FilaDato({ c, probarId, archivo }: { c: ColumnaCarga; probarId: string 
           <p className="text-xs text-neutral-500">Nombre interno: <span className="font-mono">{c.campo}</span>{!c.puede_faltar && " · siempre obligatoria: el dashboard y las alertas la necesitan"}</p>
           <FormColumna campo={c.campo} etiqueta={etiqueta} principal={principal} alternativos={alternativos} obligatoria={c.obligatoria}
             puedeFaltar={c.puede_faltar} probarId={probarId} archivo={archivo} />
+          <RestaurarCampo campo={c.campo} nombreCubo={NOMBRE_CUBO[c.campo]} deFabrica={esDeFabrica(c)} />
         </div>
       </details>
     </li>
