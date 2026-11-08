@@ -3,6 +3,7 @@
  * Lista cerrada de temas que el cubo de ventas no contiene o que el piloto no expone (CONTEXTO §2, S10).
  */
 import { normalizar } from "./texto";
+import type { ReglaAsistente } from "./tipos";
 
 /** `documentos`: el tema no está en el cubo, pero un estudio autorizado puede dar contexto (G6). Los datos
  * personales y el detalle por cliente no se responden ni con documentos. */
@@ -36,6 +37,20 @@ export function reglaFueraDeAlcance(pregunta: string): Omit<Regla, "patron"> | n
   const total = /\bcuant[oa]s clientes\b|clientes con compra/.test(t) && !/\b(que|cuales|quienes) clientes\b/.test(t);
   const r = (total ? REGLAS.slice(0, -1) : REGLAS).find((x) => x.patron.test(t));
   return r ? { motivo: r.motivo, documentos: r.documentos } : null;
+}
+
+/**
+ * Bloqueos definidos por un admin (G8): si la pregunta contiene alguno de los términos de una regla de tipo
+ * `bloqueo` (sin tildes ni mayúsculas, como palabra o frase completa), se responde con su motivo y sin cifras ni
+ * documentos. Se aplica antes que las reglas fijas.
+ */
+export function reglaBloqueo(pregunta: string, reglas: ReglaAsistente[] = []): Omit<Regla, "patron"> | null {
+  const t = ` ${normalizar(pregunta).replace(/[¿?¡!.,;:()"]/g, " ").replace(/\s+/g, " ")} `;
+  const r = reglas.find((x) => x.tipo === "bloqueo" && x.terminos.some((term) => {
+    const n = normalizar(term).replace(/\s+/g, " ");
+    return n.length > 0 && t.includes(` ${n} `);
+  }));
+  return r ? { motivo: r.texto, documentos: false } : null;
 }
 
 /** Devuelve el motivo si la pregunta está fuera de alcance; null si se puede responder. */

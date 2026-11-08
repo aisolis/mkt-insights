@@ -8,7 +8,7 @@ import { elegirCitas, type Cita } from "@/lib/conocimiento/tipos";
 import { advertencias, S1_SIN_CERTIFICAR_HASTA } from "@/lib/dashboard/params";
 import { fechaCorta, periodoLargo } from "@/lib/format";
 import type { Kpi } from "@/lib/semantic/contracts";
-import { reglaFueraDeAlcance } from "./alcance";
+import { reglaBloqueo, reglaFueraDeAlcance } from "./alcance";
 import { hipotesis, interpretar, llamadas, redactar } from "./determinista";
 import { ErrorHerramienta, ejecutar } from "./herramientas";
 import { preguntarAlModelo, type ConfigModelo } from "./modelo";
@@ -17,7 +17,7 @@ import type { Contexto, Evidencia, Resultado, Respuesta, Turno } from "./tipos";
 import { cifrasNoVerificadas, cifrasPermitidas } from "./verificar";
 
 export async function responder(pregunta: string, historial: Turno[], ctx: Contexto, modelo: ConfigModelo | null): Promise<Respuesta> {
-  const regla = reglaFueraDeAlcance(pregunta);
+  const regla = reglaBloqueo(pregunta, ctx.reglas) ?? reglaFueraDeAlcance(pregunta);
   if (regla) {
     // Sin cifras del cubo. Si el tema lo admite, se muestran los documentos autorizados que hablen de eso.
     const contexto = regla.documentos ? await contextoDocumentos(pregunta, ctx) : [];

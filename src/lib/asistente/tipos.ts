@@ -20,8 +20,28 @@ export type Fuente = {
   descomposicion(req: z.input<typeof DescomposicionRequest>): Promise<Descomposicion>;
 };
 
-/** `documentos`: búsqueda en el conocimiento autorizado (G6); sin ella el asistente responde solo con el cubo. */
-export type Contexto = { fuente: Fuente; version: VersionVigente; estado: EstadoDashboard; documentos?: Buscador };
+/**
+ * Regla del asistente administrada por un admin (G8). `instruccion` y `definicion` van en las instrucciones de
+ * sistema de cada llamada (no dependen del historial, así que no se olvidan); `bloqueo` lo aplica el código antes
+ * de llamar al modelo, como los temas fuera de alcance: `texto` es el motivo que ve el usuario y `terminos` las
+ * palabras o frases que lo activan. Ninguna regla puede saltarse el verificador de cifras ni el catálogo.
+ */
+export type ReglaAsistente = { id: string; tipo: "instruccion" | "definicion" | "bloqueo"; texto: string; terminos: string[] };
+
+/**
+ * Lo que una conversación recuerda de su última respuesta, estructurado y sin prosa ni cifras: sirve para
+ * preguntas que siguen el hilo ("¿y en Detalle?") sin mandar el chat completo al modelo.
+ */
+export type Memoria = { periodo?: Periodo; comparado?: Periodo; filtros?: Filtros; dimension?: string; herramienta?: string };
+
+/**
+ * `documentos`: búsqueda en el conocimiento autorizado (G6); sin ella el asistente responde solo con el cubo.
+ * `reglas`: reglas activas del asistente (G8). `memoria`: última consulta de la conversación (G8).
+ */
+export type Contexto = {
+  fuente: Fuente; version: VersionVigente; estado: EstadoDashboard; documentos?: Buscador;
+  reglas?: ReglaAsistente[]; memoria?: Memoria;
+};
 
 export type Visual =
   | { tipo: "variacion"; titulo: string; filas: VariacionFila[] }

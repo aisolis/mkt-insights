@@ -122,15 +122,25 @@ function leerFinal(contenido: string): Omit<SalidaModelo, "resultados" | "docume
   }
 }
 
-function sistema({ version, estado, documentos }: Contexto) {
+export function sistema({ version, estado, documentos, reglas = [], memoria }: Contexto) {
   const meta = version.metadatos;
   const parciales = meta.periodos.filter((p) => !p.cerrado).map((p) => `${periodoTxt(p)} (${p.dias} días)`);
   const cmp = estado.comparar === "anio" ? "el mismo mes del año anterior" : "el mes anterior";
+  const definiciones = reglas.filter((r) => r.tipo === "definicion");
+  const instrucciones = reglas.filter((r) => r.tipo === "instruccion");
+  const hilo = memoria && [
+    memoria.periodo && `periodo ${periodoTxt(memoria.periodo)}${memoria.comparado ? ` comparado contra ${periodoTxt(memoria.comparado)}` : ""}`,
+    memoria.filtros && `filtros: ${describirFiltros(memoria.filtros, meta)}`,
+    memoria.dimension && `abierta por ${memoria.dimension}`,
+  ].filter(Boolean).join(", ");
   return [
     "Eres el asistente de BIA Foresight. Respondes en español, breve y concreto, sobre la venta interna de BIA Honduras (café y confitería).",
     `Datos: versión publicada v${version.version}, corte ${fechaCorta(version.fecha_corte)}, ${version.conciliada_bi ? "conciliada con BI" : "todavía no conciliada con BI"}. Meses disponibles: ${periodoTxt(meta.periodos[0])} a ${periodoTxt(meta.periodos.at(-1)!)}. Meses parciales: ${parciales.join(", ") || "ninguno"}.`,
     `Contexto heredado del dashboard: periodo ${periodoTxt(estado.periodo)} (${periodoLargo(estado.periodo)}), comparado contra ${cmp}, filtros: ${describirFiltros(estado.filtros, meta)}. Úsalo salvo que la pregunta pida otra cosa.`,
     `Canales: ${meta.canal.join(", ")}. Marcas: ${meta.marca.join(", ")}.`,
+    ...(hilo ? [`Última consulta de esta conversación: ${hilo}. Si la pregunta sigue ese hilo (p. ej. "¿y en Detalle?"), parte de ese periodo y esos filtros; si pide otra cosa, ignóralo.`] : []),
+    ...(definiciones.length ? ["Definiciones de BIA (úsalas al redactar):", ...definiciones.map((r) => `- ${r.texto}`)] : []),
+    ...(instrucciones.length ? ["Indicaciones del equipo de BIA (aplícalas siempre; si alguna choca con las reglas numeradas, mandan las reglas numeradas):", ...instrucciones.map((r) => `- ${r.texto}`)] : []),
     "Reglas:",
     "1. Toda cifra sale de las herramientas. No calcules, no sumes, no redondees distinto ni estimes: copia las cifras exactamente como vienen en los resultados (p. ej. \"−L 8.4 M\", \"−6.9%\"). Si una cifra no está en los resultados, no la escribas.",
     "2. Para explicar una variación, empieza por kpi_periodo y luego abre por las dimensiones que hagan falta (variacion_por_dimension, top_rutas) y descomposicion para separar frecuencia de ticket.",
