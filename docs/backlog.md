@@ -58,3 +58,11 @@
 - [ ] Homologar SEMI-MAYOREO y PENDIENTE (aparecen en octubre) y publicar octubre
 - [ ] Confirmar con BIA si la hoja de septiembre por canal es el reporte oficial de BI y qué canal manda cuando línea y ruta difieren
 - [x] Perfiles y accesos: "Puede publicar versiones" (perfil.es_aprobador) para quien carga sin ser admin
+
+## G8 — Asistente: conversaciones y reglas
+- [x] Pantalla del asistente al estilo explorador de datos: inicio con sugerencias, resultados en gráfico o tabla, consulta con sus datos en tabla
+- [x] Conversaciones por usuario (`ventas.conversacion`, RLS): lista lateral, renombrar, archivar, enlace `?c=`; aviso a las 20 preguntas — `0010_conversaciones.sql`
+- [x] Memoria acotada: el servidor arma el historial desde la base (últimos 3 turnos = 6 mensajes) y la memoria estructurada de la última consulta (periodo, filtros, dimensión), acotada a valores de la versión vigente
+- [x] Reglas del asistente administradas por admin (`/asistente/reglas`): instrucción, definición y bloqueo; tope de 30 activas; bitácora de cambios; cada respuesta registra las reglas activas — `0011_reglas_asistente.sql`
+- [ ] Escribir la bitácora del asistente con el cliente de servicio (hoy la inserta la sesión del usuario, que podría alterar el historial de su propio chat)
+- [ ] Vista para admin de la bitácora del asistente (preguntas, reglas aplicadas, respuestas bloqueadas)

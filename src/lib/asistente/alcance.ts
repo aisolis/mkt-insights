@@ -39,15 +39,19 @@ export function reglaFueraDeAlcance(pregunta: string): Omit<Regla, "patron"> | n
   return r ? { motivo: r.motivo, documentos: r.documentos } : null;
 }
 
+/** Signos que separan palabras al comparar bloqueos (pregunta y términos se limpian igual). */
+export const SIGNOS_BLOQUEO = /[¿?¡!.,;:()"«»'“”‘’/\-]/g;
+const limpiarBloqueo = (s: string) => normalizar(s).replace(SIGNOS_BLOQUEO, " ").replace(/\s+/g, " ").trim();
+
 /**
  * Bloqueos definidos por un admin (G8): si la pregunta contiene alguno de los términos de una regla de tipo
  * `bloqueo` (sin tildes ni mayúsculas, como palabra o frase completa), se responde con su motivo y sin cifras ni
  * documentos. Se aplica antes que las reglas fijas.
  */
 export function reglaBloqueo(pregunta: string, reglas: ReglaAsistente[] = []): Omit<Regla, "patron"> | null {
-  const t = ` ${normalizar(pregunta).replace(/[¿?¡!.,;:()"]/g, " ").replace(/\s+/g, " ")} `;
+  const t = ` ${limpiarBloqueo(pregunta)} `;
   const r = reglas.find((x) => x.tipo === "bloqueo" && x.terminos.some((term) => {
-    const n = normalizar(term).replace(/\s+/g, " ");
+    const n = limpiarBloqueo(term);
     return n.length > 0 && t.includes(` ${n} `);
   }));
   return r ? { motivo: r.texto, documentos: false } : null;

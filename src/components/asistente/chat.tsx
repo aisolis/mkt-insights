@@ -3,13 +3,15 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { CanalChart } from "@/components/dashboard/canal-chart";
 import { SerieChart } from "@/components/dashboard/serie-chart";
-import type { Respuesta, Turno, Visual } from "@/lib/asistente/tipos";
+import type { ConversacionResumen, TurnoGuardado } from "@/lib/asistente/conversaciones";
+import type { Respuesta, Visual } from "@/lib/asistente/tipos";
 import type { Cita } from "@/lib/conocimiento/tipos";
 import { fechaCorta, lempiras, mesNombre, capital } from "@/lib/format";
 import {
   Destello, FlechaArriba, IconoAlerta, IconoCaja, IconoCodigo, IconoDocumento, IconoEscudo, IconoGrafico, IconoMapa,
   IconoMas, IconoPersonas, IconoTabla, IconoTendencia,
 } from "./iconos";
+import { IconoConversaciones, PanelConversaciones } from "./conversaciones";
 import { aFilas, TablaDatos, type Datos } from "./tabla-datos";
 
 type Intercambio = { pregunta: string; respuesta?: Respuesta; error?: string };
@@ -18,9 +20,16 @@ export type Sugerencia = { categoria: string; texto: string; icono: keyof typeof
 const ICONOS = { tendencia: IconoTendencia, personas: IconoPersonas, caja: IconoCaja, mapa: IconoMapa } as const;
 const TINTES = ["bg-indigo-50 text-indigo-600", "bg-rose-50 text-rose-600", "bg-sky-50 text-sky-600", "bg-amber-50 text-amber-600"];
 
+/** A partir de cuántas preguntas se sugiere empezar otra conversación (el modelo solo ve los últimos turnos). */
+const PREGUNTAS_SUGERIR_NUEVA = 20;
+
+/** Conversación abierta: su contexto (query string del dashboard con el que empezó) y ese contexto en palabras. */
+type Activa = { id: string; titulo: string; contexto: string; contextoTxt: string };
+export type ConversacionInicial = { conversacion: ConversacionResumen; contextoTxt: string; turnos: TurnoGuardado[] };
+
 type Props = {
   nombre: string;
-  /** Query string del dashboard: el asistente hereda periodo, comparación y filtros. */
+  /** Query string del dashboard: las conversaciones nuevas heredan periodo, comparación y filtros. */
   contexto: string;
   /** Periodo y filtros en palabras, para el chip de contexto. */
   contextoTxt: string;
@@ -28,30 +37,70 @@ type Props = {
   inicial?: string;
   sugerencias: Sugerencia[];
   conModelo: boolean;
+  /** Últimas conversaciones del usuario (precargadas en el servidor). */
+  conversaciones: ConversacionResumen[];
+  /** Conversación del enlace (?c=id), si existe y es del usuario. */
+  abierta: ConversacionInicial | null;
+  /** El enlace traía ?c= pero la conversación no existe, es de otro o está archivada: se limpia la URL. */
+  descartada?: boolean;
 };
 
-export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerencias, conModelo }: Props) {
-  const [turnos, setTurnos] = useState<Intercambio[]>([]);
+const aIntercambios = (turnos: TurnoGuardado[]): Intercambio[] => turnos.map(({ pregunta, respuesta, error }) => ({ pregunta, respuesta, error }));
+
+/**
+ * Enlace directo a la conversación (?c=id), conservando periodo, filtros y `sobre`. Con history.replaceState
+ * (integrado al router de Next) en vez de router.replace: no vuelve a pedir la página al servidor en cada pregunta.
+ */
+function fijarUrl(id: string | null, quitarSobre = false) {
+  const q = new URLSearchParams(window.location.search);
+  if (id) q.set("c", id);
+  else q.delete("c");
+  if (quitarSobre) q.delete("sobre");
+  const qs = q.toString();
+  window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+}
+
+export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerencias, conModelo, conversaciones, abierta, descartada }: Props) {
+  const [lista, setLista] = useState(conversaciones);
+  const [activa, setActiva] = useState<Activa | null>(abierta && {
+    id: abierta.conversacion.id, titulo: abierta.conversacion.titulo, contexto: abierta.conversacion.contexto, contextoTxt: abierta.contextoTxt,
+  });
+  const [turnos, setTurnos] = useState<Intercambio[]>(() => aIntercambios(abierta?.turnos ?? []));
+  const [preguntas, setPreguntas] = useState(abierta?.conversacion.preguntas ?? 0);
   const [enviando, setEnviando] = useState(false);
+  const [cargando, setCargando] = useState(false);
+  const [panelAbierto, setPanelAbierto] = useState(false);
   const ultimo = useRef<HTMLDivElement>(null);
   const enviado = useRef(false);
+  /** Solo la última apertura pedida pinta su resultado (clics rápidos entre conversaciones). */
+  const apertura = useRef(0);
+
+  const ponerEnLista = (c: ConversacionResumen) =>
+    setLista((l) => [c, ...l.filter((x) => x.id !== c.id)].sort((a, b) => b.actualizada_en.localeCompare(a.actualizada_en)));
 
   async function preguntar(pregunta: string) {
     pregunta = pregunta.trim();
-    if (pregunta.length < 2 || enviando) return false;
-    const historial: Turno[] = turnos.flatMap((t) => [
-      { rol: "usuario" as const, texto: t.pregunta },
-      ...(t.respuesta ? [{ rol: "asistente" as const, texto: t.respuesta.texto }] : []),
-    ]);
+    if (pregunta.length < 2 || enviando || cargando) return false;
+    const actual = activa;
     setTurnos((ts) => [...ts, { pregunta }]);
     setEnviando(true);
     try {
+      // En una conversación abierta el servidor usa su contexto, historial y memoria: el cliente solo manda el id.
       const res = await fetch("/api/asistente", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pregunta, contexto, historial: historial.slice(-12) }),
+        body: JSON.stringify(actual ? { pregunta, conversacionId: actual.id } : { pregunta, contexto }),
       });
       const json = await res.json();
-      const r: Intercambio = res.ok ? { pregunta, respuesta: json as Respuesta } : { pregunta, error: json.error ?? `Error ${res.status}` };
+      const { conversacionId, preguntas: n, conversacion, ...resto } = json as {
+        conversacionId?: string; preguntas?: number; conversacion?: ConversacionResumen; error?: string;
+      };
+      if (conversacion) ponerEnLista(conversacion);
+      if (typeof n === "number") setPreguntas(n);
+      if (conversacionId && !actual) {
+        setActiva({ id: conversacionId, titulo: conversacion?.titulo ?? pregunta, contexto, contextoTxt });
+        fijarUrl(conversacionId);
+      }
+      const r: Intercambio = res.ok ? { pregunta, respuesta: resto as unknown as Respuesta } : { pregunta, error: resto.error ?? `Error ${res.status}` };
       setTurnos((ts) => [...ts.slice(0, -1), r]);
     } catch {
       setTurnos((ts) => [...ts.slice(0, -1), { pregunta, error: "No se pudo contactar al servidor." }]);
@@ -61,15 +110,87 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
     return true;
   }
 
-  // Llegada desde "Preguntar al asistente": se envía la pregunta sugerida una sola vez.
+  function nueva() {
+    if (enviando) return;
+    apertura.current++;
+    setActiva(null);
+    setTurnos([]);
+    setPreguntas(0);
+    setCargando(false);
+    setPanelAbierto(false);
+    fijarUrl(null, true);
+  }
+
+  async function abrir(id: string) {
+    setPanelAbierto(false);
+    if (enviando || id === activa?.id) return;
+    const pedido = ++apertura.current;
+    const resumen = lista.find((c) => c.id === id);
+    setActiva({ id, titulo: resumen?.titulo ?? "", contexto: resumen?.contexto ?? contexto, contextoTxt: "" });
+    setTurnos([]);
+    setPreguntas(resumen?.preguntas ?? 0);
+    setCargando(true);
+    fijarUrl(id);
+    try {
+      const res = await fetch(`/api/asistente/conversaciones/${id}`);
+      if (pedido !== apertura.current) return;
+      if (res.status === 404) {
+        setLista((l) => l.filter((c) => c.id !== id));
+        nueva();
+        return;
+      }
+      if (!res.ok) throw new Error(String(res.status));
+      const json = (await res.json()) as ConversacionInicial;
+      if (pedido !== apertura.current) return;
+      setActiva({ id, titulo: json.conversacion.titulo, contexto: json.conversacion.contexto, contextoTxt: json.contextoTxt });
+      setTurnos(aIntercambios(json.turnos));
+      setPreguntas(json.conversacion.preguntas);
+    } catch {
+      if (pedido === apertura.current) setTurnos([{ pregunta: resumen?.titulo ?? "Conversación", error: "No se pudo cargar la conversación." }]);
+    } finally {
+      if (pedido === apertura.current) setCargando(false);
+    }
+  }
+
+  async function renombrar(id: string, titulo: string) {
+    const res = await fetch(`/api/asistente/conversaciones/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ titulo }),
+    }).catch(() => null);
+    if (!res?.ok) return false;
+    const { conversacion } = (await res.json()) as { conversacion: ConversacionResumen };
+    setLista((l) => l.map((c) => (c.id === id ? { ...c, titulo: conversacion.titulo } : c)));
+    setActiva((a) => (a?.id === id ? { ...a, titulo: conversacion.titulo } : a));
+    return true;
+  }
+
+  async function archivar(id: string) {
+    const res = await fetch(`/api/asistente/conversaciones/${id}`, { method: "DELETE" }).catch(() => null);
+    if (!res || (!res.ok && res.status !== 404)) return false;
+    setLista((l) => l.filter((c) => c.id !== id));
+    if (activa?.id === id) nueva();
+    return true;
+  }
+
+  // Llegada desde "Preguntar al asistente": se envía la pregunta sugerida una sola vez (solo sin conversación abierta).
   useEffect(() => {
-    if (inicial && !enviado.current) { enviado.current = true; void preguntar(inicial); }
+    if (inicial && !abierta && !enviado.current) { enviado.current = true; void preguntar(inicial); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inicial]);
+  // ?c= de una conversación que no se puede abrir: se quita del enlace.
+  useEffect(() => { if (descartada) fijarUrl(null); }, [descartada]);
   // Al preguntar y al llegar la respuesta, la pregunta queda arriba: la respuesta se lee desde el principio.
   useEffect(() => { if (turnos.length) ultimo.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [turnos]);
+  useEffect(() => {
+    if (!panelAbierto) return;
+    const cerrar = (e: KeyboardEvent) => { if (e.key === "Escape") setPanelAbierto(false); };
+    window.addEventListener("keydown", cerrar);
+    return () => window.removeEventListener("keydown", cerrar);
+  }, [panelAbierto]);
 
-  const chip = <ChipContexto texto={contextoTxt} contexto={contexto} />;
+  // Mientras carga una conversación todavía no se conoce su contexto en palabras: se muestra el de la página.
+  const chip = activa?.contextoTxt
+    ? <ChipContexto texto={activa.contextoTxt} contexto={activa.contexto} />
+    : <ChipContexto texto={contextoTxt} contexto={contexto} />;
   const pie = (
     <p className="flex items-center justify-center gap-1.5 text-center text-xs text-neutral-500">
       <IconoEscudo className="size-3.5 shrink-0" />
@@ -77,73 +198,122 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
       {" "}No se envían datos de clientes a la IA.
     </p>
   );
-
-  if (turnos.length === 0) {
-    return (
-      <div className="relative -m-6 flex min-h-[calc(100vh-3.25rem)] flex-col items-center justify-center overflow-hidden px-6 py-12">
-        <Resplandor />
-        <div className="relative z-10 flex w-full flex-col items-center">
-          <h1 className="text-center text-4xl font-semibold tracking-tight text-neutral-900">Hola, {nombre}</h1>
-          <p className="mt-2 text-center text-lg text-neutral-600">¿Qué quieres saber de la venta?</p>
-          <div className="mt-8 w-full max-w-3xl">
-            <Caja grande onPreguntar={preguntar} enviando={enviando} chip={chip} />
-          </div>
-          <div className="mt-6 grid w-full max-w-5xl gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {sugerencias.map((s, i) => {
-              const Icono = ICONOS[s.icono];
-              return (
-                <button key={s.texto} type="button" onClick={() => void preguntar(s.texto)}
-                  className="group flex min-h-36 flex-col justify-between rounded-xl border border-neutral-200 bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-md">
-                  <span>
-                    <span className="block text-xs text-neutral-500">{s.categoria}</span>
-                    <span className="mt-1 block text-sm font-medium leading-snug text-neutral-900">{s.texto}</span>
-                  </span>
-                  <span className={`mt-4 grid size-10 place-items-center rounded-lg ${TINTES[i % TINTES.length]}`}><Icono className="size-5" /></span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-8">{pie}</div>
-        </div>
-      </div>
-    );
-  }
+  const panel = (
+    <PanelConversaciones conversaciones={lista} activa={activa?.id ?? null} ocupado={enviando}
+      onNueva={nueva} onAbrir={(id) => void abrir(id)} onRenombrar={renombrar} onArchivar={archivar} />
+  );
+  const botonPanel = (
+    <button type="button" onClick={() => setPanelAbierto(true)} aria-label="Ver conversaciones" aria-expanded={panelAbierto}
+      className="flex shrink-0 items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 lg:hidden">
+      <IconoConversaciones className="size-3.5" /> Conversaciones
+    </button>
+  );
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-6.5rem)] max-w-4xl flex-col">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 pb-3">
-        <div className="flex items-center gap-2">
-          <Avatar />
-          <div>
-            <div className="text-sm font-semibold">Asistente de IA</div>
-            <div className="text-xs text-neutral-500">Versión publicada v{version}</div>
-          </div>
+    <div className="-m-6 flex h-[calc(100vh-3.25rem)] overflow-hidden">
+      <div className="hidden h-full shrink-0 lg:block">{panel}</div>
+      {panelAbierto && (
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Conversaciones">
+          <div className="absolute inset-0 bg-neutral-900/30" onClick={() => setPanelAbierto(false)} />
+          <div className="absolute inset-y-0 left-0 shadow-xl">{panel}</div>
         </div>
-        <button type="button" onClick={() => setTurnos([])} disabled={enviando}
-          className="flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50">
-          <IconoMas className="size-3.5" /> Nueva conversación
-        </button>
-      </div>
+      )}
 
-      <div className="flex-1 space-y-8 pb-6">
-        {turnos.map((t, i) => (
-          <div key={i} ref={i === turnos.length - 1 ? ultimo : undefined} className="scroll-mt-6 space-y-4">
-            <div className="ml-auto w-fit max-w-[80%] rounded-2xl rounded-br-md bg-neutral-200/70 px-4 py-2.5 text-sm text-neutral-900">{t.pregunta}</div>
-            <div className="flex gap-3">
-              <Avatar />
-              <div className="min-w-0 flex-1">
-                {t.respuesta ? <RespuestaVista r={t.respuesta} /> : t.error ? (
-                  <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{t.error}</div>
-                ) : <Pensando />}
+      <div className="relative min-w-0 flex-1 overflow-y-auto">
+        {!activa && turnos.length === 0 ? (
+          <div className="relative flex min-h-full flex-col items-center justify-center overflow-hidden px-6 py-12">
+            <Resplandor />
+            <div className="absolute left-4 top-4 z-10">{botonPanel}</div>
+            <div className="relative z-10 flex w-full flex-col items-center">
+              <h1 className="text-center text-4xl font-semibold tracking-tight text-neutral-900">Hola, {nombre}</h1>
+              <p className="mt-2 text-center text-lg text-neutral-600">¿Qué quieres saber de la venta?</p>
+              <div className="mt-8 w-full max-w-3xl">
+                <Caja grande onPreguntar={preguntar} enviando={enviando} chip={chip} />
               </div>
+              <div className="mt-6 grid w-full max-w-5xl gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {sugerencias.map((s, i) => {
+                  const Icono = ICONOS[s.icono];
+                  return (
+                    <button key={s.texto} type="button" onClick={() => void preguntar(s.texto)}
+                      className="group flex min-h-36 flex-col justify-between rounded-xl border border-neutral-200 bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-md">
+                      <span>
+                        <span className="block text-xs text-neutral-500">{s.categoria}</span>
+                        <span className="mt-1 block text-sm font-medium leading-snug text-neutral-900">{s.texto}</span>
+                      </span>
+                      <span className={`mt-4 grid size-10 place-items-center rounded-lg ${TINTES[i % TINTES.length]}`}><Icono className="size-5" /></span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-8">{pie}</div>
             </div>
           </div>
-        ))}
-      </div>
+        ) : (
+          <div className="mx-auto flex min-h-full max-w-4xl flex-col px-6 pt-6">
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 pb-3">
+              <div className="flex min-w-0 items-center gap-2">
+                {botonPanel}
+                <Avatar />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold" title={activa?.titulo}>{activa?.titulo || "Asistente de IA"}</div>
+                  <div className="text-xs text-neutral-500">Asistente de IA · versión publicada v{version}</div>
+                </div>
+              </div>
+              <button type="button" onClick={nueva} disabled={enviando}
+                className="flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50">
+                <IconoMas className="size-3.5" /> Nueva conversación
+              </button>
+            </div>
 
-      <div className="sticky bottom-0 -mx-2 space-y-2 bg-gradient-to-t from-neutral-50 from-70% to-transparent px-2 pb-2 pt-6">
-        <Caja onPreguntar={preguntar} enviando={enviando} chip={chip} />
-        {pie}
+            <div className="flex-1 space-y-8 pb-6">
+              {cargando && <Cargando />}
+              {turnos.map((t, i) => (
+                <div key={i} ref={i === turnos.length - 1 ? ultimo : undefined} className="scroll-mt-6 space-y-4">
+                  <div className="ml-auto w-fit max-w-[80%] rounded-2xl rounded-br-md bg-neutral-200/70 px-4 py-2.5 text-sm text-neutral-900">{t.pregunta}</div>
+                  <div className="flex gap-3">
+                    <Avatar />
+                    <div className="min-w-0 flex-1">
+                      {t.respuesta ? <RespuestaVista r={t.respuesta} /> : t.error ? (
+                        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{t.error}</div>
+                      ) : <Pensando />}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="sticky bottom-0 -mx-2 space-y-2 bg-neutral-50 px-2 pb-4 pt-2 before:pointer-events-none before:absolute before:inset-x-0 before:-top-8 before:h-8 before:bg-gradient-to-t before:from-neutral-50 before:to-transparent">
+              {preguntas >= PREGUNTAS_SUGERIR_NUEVA && !enviando && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-indigo-50/80 px-4 py-2.5 text-xs text-indigo-950">
+                  <span className="flex items-center gap-2">
+                    <Destello className="size-3.5 shrink-0 text-indigo-500" />
+                    Esta conversación ya tiene {preguntas} preguntas. Para un tema nuevo conviene empezar otra: el asistente solo recuerda las últimas.
+                  </span>
+                  <button type="button" onClick={nueva}
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-neutral-900 px-3 py-1 font-medium text-white hover:bg-neutral-700">
+                    <IconoMas className="size-3.5" /> Nueva conversación
+                  </button>
+                </div>
+              )}
+              <Caja onPreguntar={preguntar} enviando={enviando || cargando} chip={chip} />
+              {pie}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Cargando() {
+  return (
+    <div className="space-y-4" aria-live="polite" aria-busy="true">
+      <p className="text-sm text-neutral-500">Cargando la conversación…</p>
+      <div className="ml-auto h-9 w-2/5 animate-pulse rounded-2xl bg-neutral-200/70" />
+      <div className="space-y-2">
+        <div className="h-3 w-11/12 animate-pulse rounded bg-neutral-200" />
+        <div className="h-3 w-4/5 animate-pulse rounded bg-neutral-200" />
+        <div className="mt-4 h-40 animate-pulse rounded-xl bg-neutral-100" />
       </div>
     </div>
   );

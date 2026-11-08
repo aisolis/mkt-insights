@@ -59,7 +59,7 @@ function tono(v: Celda) {
 export function TablaDatos({ datos, maxAlto = "max-h-96" }: { datos: Datos; maxAlto?: string }) {
   const { columnas, filas } = datos;
   // Una columna es numérica si sus valores son números o cifras con formato (L 1,234 · +5.2%).
-  const numerica = columnas.map((_, i) => filas.length > 0 && filas.every((f) => f[i] === null || f[i] === "—" || esNumero(f[i]) || /^[+−-]?\s*(L\s)?[\d.,]+\s*(%|t|kg)?$/.test(String(f[i]))));
+  const numerica = columnas.map((_, i) => filas.length > 0 && filas.every((f) => f[i] === null || f[i] === "—" || esNumero(f[i]) || /^[+−-]?\s*(L\s)?[\d.,]+\s*(%|t|kg|M|k)?$/.test(String(f[i]))));
   return (
     <div>
       <div className={`overflow-auto rounded-lg border border-neutral-200 ${maxAlto}`}>
