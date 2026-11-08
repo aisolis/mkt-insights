@@ -210,7 +210,7 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
   );
 
   return (
-    <div className="-m-6 flex h-[calc(100vh-3.25rem)] overflow-hidden">
+    <div className="-m-4 flex h-[calc(100dvh-3.25rem)] overflow-hidden md:-m-6">
       <div className="hidden h-full shrink-0 lg:block">{panel}</div>
       {panelAbierto && (
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Conversaciones">
@@ -221,7 +221,7 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
 
       <div className="relative min-w-0 flex-1 overflow-y-auto">
         {!activa && turnos.length === 0 ? (
-          <div className="relative flex min-h-full flex-col items-center justify-center overflow-hidden px-6 py-12">
+          <div className="relative flex min-h-full flex-col items-center justify-start overflow-hidden px-4 pb-12 pt-16 sm:px-6 lg:justify-center lg:py-12">
             <Resplandor />
             <div className="absolute left-4 top-4 z-10">{botonPanel}</div>
             <div className="relative z-10 flex w-full flex-col items-center">
@@ -397,7 +397,8 @@ function Pensando() {
   );
 }
 
-function RespuestaVista({ r }: { r: Respuesta }) {
+/** Una respuesta completa (también la usa la bitácora del admin para ver lo que vio el usuario). */
+export function RespuestaVista({ r }: { r: Respuesta }) {
   const [panel, setPanel] = useState<"consulta" | "evidencia" | null>(null);
   if (r.estado === "fuera_de_alcance") {
     return (

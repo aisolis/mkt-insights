@@ -117,14 +117,14 @@ describe.skipIf(!url || !anon || !service)("acceso por perfil en la base", () =>
       expect(despues.data).toEqual({ nivel: "estandar", es_admin: false });
     });
 
-    it("registra y lee solo sus preguntas en la bitácora", async () => {
+    it("no escribe en la bitácora (la escribe el servidor) y lee solo sus preguntas", async () => {
       const fila = { version, contexto: "", pregunta: "prueba de acceso", estado: "ok" };
       const propia = await sb.schema("ventas").from("consulta_asistente").insert({ ...fila, usuario_id: id });
-      expect(propia.error).toBeNull();
+      expect(propia.error).not.toBeNull();
       const ajena = await sb.schema("ventas").from("consulta_asistente").insert({ ...fila, usuario_id: creados[0] });
       expect(ajena.error).not.toBeNull();
-      const sinUsuario = await sb.schema("ventas").from("consulta_asistente").insert(fila);
-      expect(sinUsuario.error).not.toBeNull();
+      // El servidor registra con service_role; el usuario lee la suya y no la de otros.
+      await svc.schema("ventas").from("consulta_asistente").insert([{ ...fila, usuario_id: id }, { ...fila, usuario_id: creados[0] }]);
       const mias = await sb.schema("ventas").from("consulta_asistente").select("usuario_id");
       expect(mias.data?.length).toBe(1);
       expect(mias.data?.every((f) => f.usuario_id === id)).toBe(true);

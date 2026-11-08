@@ -4,13 +4,14 @@ import { leerParams, periodoComparado, queryString } from "@/lib/dashboard/param
 import { capital } from "@/lib/format";
 import type { VersionVigente } from "@/lib/semantic/contracts";
 import type { FilaBitacora } from "@/lib/semantic/queries";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { describirFiltros, rango } from "./texto";
 import type { Respuesta, Turno } from "./tipos";
 
 /**
- * Conversaciones del asistente (G8, 0010_conversaciones.sql). Todo pasa por el cliente con la sesión del
- * usuario: RLS garantiza que cada quien ve, crea y cambia solo las suyas (una ajena se comporta como inexistente).
+ * Conversaciones del asistente (G8, 0010_conversaciones.sql). Las lecturas y los cambios de conversaciones pasan
+ * por el cliente con la sesión del usuario: RLS garantiza que cada quien ve, crea y cambia solo las suyas (una
+ * ajena se comporta como inexistente). La única escritura con service_role es registrarTurno.
  * Los turnos son las filas de la bitácora (ventas.consulta_asistente) con su conversacion_id.
  */
 
@@ -121,10 +122,15 @@ export async function historialReciente(conversacionId: string, n = TURNOS_HISTO
 }
 
 /** Registra la pregunta en la bitácora dentro de su conversación. Si falla, no rompe la respuesta. */
-/** `reglas`: ids de las reglas del asistente activas al responder (G8), para auditar con qué reglas se respondió. */
+/**
+ * Registra un turno en la bitácora. Lo escribe el servidor con service_role (0012_bitacora_servidor.sql): el
+ * usuario no puede insertar filas, así que el historial y la memoria del modelo salen solo de respuestas reales.
+ * Quien llama ya comprobó con la sesión del usuario (RLS) que la conversación es suya.
+ * `reglas`: ids de las reglas del asistente activas al responder (G8), para auditar con qué reglas se respondió.
+ */
 export async function registrarTurno(fila: FilaBitacora & { conversacion_id: string; reglas: string[] }) {
   try {
-    const { error } = await (await tabla("consulta_asistente")).insert(fila);
+    const { error } = await createServiceClient().schema("ventas").from("consulta_asistente").insert(fila);
     if (error) console.error("bitácora del asistente:", error.message);
   } catch (e) {
     console.error("bitácora del asistente:", e);

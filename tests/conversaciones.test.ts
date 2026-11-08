@@ -163,7 +163,8 @@ describe.skipIf(!url || !anon || !service)("conversaciones: aislamiento por usua
     const { data, error } = await conv(a.sb).insert({ usuario_id: a.id, titulo: "¿Dónde cae la venta?", contexto: "periodo=2026-09" }).select("id").single();
     if (error) throw error;
     conversacionA = data.id;
-    const t = await bitacora(a.sb).insert([turno(a.id, conversacionA, "¿Dónde cae la venta?"), turno(a.id, conversacionA, "¿Y en Detalle?")]);
+    // La bitácora la escribe el servidor (service_role, 0012); el usuario solo la lee.
+    const t = await bitacora(svc).insert([turno(a.id, conversacionA, "¿Dónde cae la venta?"), turno(a.id, conversacionA, "¿Y en Detalle?")]);
     if (t.error) throw t.error;
   });
 
@@ -207,11 +208,14 @@ describe.skipIf(!url || !anon || !service)("conversaciones: aislamiento por usua
     expect(turnos.count).toBe(2);
   });
 
-  it("otro usuario no puede crear conversaciones a nombre ajeno ni colgar preguntas en la de otro", async () => {
+  it("nadie crea conversaciones a nombre ajeno ni escribe turnos en la bitácora", async () => {
     const ajena = await conv(b.sb).insert({ usuario_id: a.id, titulo: "falsa" });
     expect(ajena.error).not.toBeNull();
     const colgada = await bitacora(b.sb).insert(turno(b.id, conversacionA, "intruso"));
     expect(colgada.error).not.toBeNull();
+    // Ni siquiera en la propia: así el historial y la memoria del modelo salen solo de respuestas reales.
+    const enLaPropia = await bitacora(a.sb).insert(turno(a.id, conversacionA, "respuesta inventada"));
+    expect(enLaPropia.error).not.toBeNull();
     // Tampoco puede pasarle su conversación a otro usuario.
     const propia = await conv(b.sb).insert({ usuario_id: b.id, titulo: "de B" }).select("id").single();
     expect(propia.error).toBeNull();

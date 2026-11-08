@@ -64,5 +64,6 @@
 - [x] Conversaciones por usuario (`ventas.conversacion`, RLS): lista lateral, renombrar, archivar, enlace `?c=`; aviso a las 20 preguntas — `0010_conversaciones.sql`
 - [x] Memoria acotada: el servidor arma el historial desde la base (últimos 3 turnos = 6 mensajes) y la memoria estructurada de la última consulta (periodo, filtros, dimensión), acotada a valores de la versión vigente
 - [x] Reglas del asistente administradas por admin (`/asistente/reglas`): instrucción, definición y bloqueo; tope de 30 activas; bitácora de cambios; cada respuesta registra las reglas activas — `0011_reglas_asistente.sql`
-- [ ] Escribir la bitácora del asistente con el cliente de servicio (hoy la inserta la sesión del usuario, que podría alterar el historial de su propio chat)
-- [ ] Vista para admin de la bitácora del asistente (preguntas, reglas aplicadas, respuestas bloqueadas)
+- [x] La bitácora del asistente la escribe solo el servidor (service_role); el usuario ya no puede insertar filas — `0012_bitacora_servidor.sql`
+- [x] Bitácora del asistente para admin (`/asistente/bitacora`): resumen, filtros por periodo, resultado y persona; detalle con la respuesta que vio la persona y las reglas activas en ese momento
+- [x] Vista en celular: menú desplegable, encabezado compacto, panel de conversaciones como cajón

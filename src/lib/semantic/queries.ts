@@ -25,13 +25,3 @@ export type FilaBitacora = {
   modo: "modelo" | "determinista" | null; modelo: string | null; texto: string | null; respuesta: unknown; error: string | null; duracion_ms: number;
 };
 
-/** Registra una pregunta del asistente (ventas.consulta_asistente). Si falla, no rompe la respuesta. */
-export async function registrarConsultaAsistente(fila: FilaBitacora) {
-  try {
-    const supabase = await createClient();
-    const { error } = await supabase.schema("ventas").from("consulta_asistente").insert(fila);
-    if (error) console.error("bitácora del asistente:", error.message);
-  } catch (e) {
-    console.error("bitácora del asistente:", e);
-  }
-}
