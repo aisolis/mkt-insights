@@ -135,7 +135,10 @@ describe.skipIf(!url || !service)("carga mensual contra el Supabase local", () =
     const ret = await svc.schema("ventas").rpc("retirar_version", { p_version: v, p_motivo: "prueba automatizada" });
     expect(ret.error).toBeNull();
     expect((await svc.schema("ventas").rpc("version_vigente")).data.version).toBe(vigenteAntes);
-    const otra = await svc.schema("ventas").rpc("retirar_version", { p_version: vigenteAntes, p_motivo: "no se puede" });
-    if (vigenteAntes === 1) expect(otra.error?.message).toMatch(/única versión/);
+    // Solo con una única versión real se prueba el rechazo: si hay más, la llamada retiraría una versión real.
+    if (vigenteAntes === 1) {
+      const otra = await svc.schema("ventas").rpc("retirar_version", { p_version: vigenteAntes, p_motivo: "no se puede" });
+      expect(otra.error?.message).toMatch(/única versión/);
+    }
   });
 });
