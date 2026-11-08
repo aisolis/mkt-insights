@@ -3,7 +3,7 @@
  * La ingesta con la base (alias, columnas que faltan, fila de encabezados) está en cargas.test.ts.
  */
 import { describe, expect, it } from "vitest";
-import { CAMPOS, camposVacios, ENCABEZADOS_CUBO, hojaExcluida, leerEncabezados, motivoHoja, normalizarEncabezado, type Campo, type MapeoCarga } from "@/lib/cargas/columnas";
+import { CAMPOS, camposVacios, ENCABEZADOS_CUBO, GRUPOS, hojaExcluida, leerEncabezados, motivoHoja, NOMBRE_CUBO, normalizarEncabezado, sugerencias, type Campo, type MapeoCarga } from "@/lib/cargas/columnas";
 
 const INICIAL: Record<Campo, string> = {
   fecha: "Fecha", ruta: "Ruta", empresa: "Empresa", marca: "Marca", categoria: "Café/Rep", proveedor: "Proveedor", cliente_codigo: "Cliente Codigo",
@@ -54,7 +54,7 @@ describe("columnas del Excel", () => {
     expect(leerEncabezados(cab, mapeo()).faltan).toEqual(["categoria"]);
     const l = leerEncabezados(cab, mapeo({ categoria: { encabezados: ["Café/Rep", "DATOS CAFE"] } }));
     expect(l.valida).toBe(true);
-    expect(l.encontrados.find((e) => e.campo === "categoria")).toEqual({ campo: "categoria", encabezado: "Datos café", columna: 4 });
+    expect(l.encontrados.find((e) => e.campo === "categoria")).toEqual({ campo: "categoria", encabezado: "Datos café", columna: 4, alternativo: true });
   });
 
   it("falta una obligatoria: la hoja no se carga y el motivo dice qué se acepta y qué trae", () => {
@@ -74,11 +74,26 @@ describe("columnas del Excel", () => {
     expect(l).toMatchObject({ valida: true, faltan: [], faltanOpcionales: ["zona", "sucursal"] });
   });
 
-  it("dos columnas para el mismo dato: no se adivina cuál usar", () => {
+  it("nombre principal y alternativos: se usa el de mayor prioridad que venga", () => {
+    const m = mapeo({ kg: { encabezados: ["Kg", "Kilos", "Peso"] } });
+    // Viene el principal y un alternativo: gana el principal, el otro queda descartado (no es error).
+    const ambos = leerEncabezados([...ENCABEZADOS_CUBO, "Kilos"], m);
+    expect(ambos).toMatchObject({ valida: true, repetidos: [], descartadas: [{ campo: "kg", encabezado: "Kilos", usada: "Kg" }] });
+    expect(ambos.encontrados.find((e) => e.campo === "kg")).toMatchObject({ encabezado: "Kg", alternativo: false });
+    // Sin el principal: el primer alternativo que venga, aunque esté más a la izquierda uno de menor prioridad.
+    const sinPrincipal = ["PESO", ...ENCABEZADOS_CUBO.filter((e) => e !== "Kg"), "kilos"];
+    const l = leerEncabezados(sinPrincipal, m);
+    expect(l.valida).toBe(true);
+    expect(l.encontrados.find((e) => e.campo === "kg")).toMatchObject({ encabezado: "kilos", alternativo: true, columna: sinPrincipal.length - 1 });
+    expect(l.descartadas).toEqual([{ campo: "kg", encabezado: "PESO", usada: "kilos" }]);
+  });
+
+  it("el mismo nombre en dos columnas: no se adivina cuál usar", () => {
     const m = mapeo({ kg: { encabezados: ["Kg", "Kilos"] } });
-    const l = leerEncabezados([...ENCABEZADOS_CUBO, "Kilos"], m);
-    expect(l).toMatchObject({ valida: false, repetidos: [{ campo: "kg", encabezados: ["Kg", "Kilos"] }] });
-    expect(motivoHoja("Hoja1", l, m, [...ENCABEZADOS_CUBO, "Kilos"])).toMatch(/hay varias columnas de kilos: «Kg», «Kilos»/);
+    const cab = [...ENCABEZADOS_CUBO, "KG"];
+    const l = leerEncabezados(cab, m);
+    expect(l).toMatchObject({ valida: false, repetidos: [{ campo: "kg", encabezados: ["Kg", "KG"] }] });
+    expect(motivoHoja("Hoja1", l, m, cab)).toMatch(/hay dos columnas con el mismo nombre para kilos: «Kg», «KG»/);
   });
 
   it("encabezados vacíos no cuentan y las hojas excluidas se comparan normalizadas", () => {
@@ -96,5 +111,24 @@ describe("columnas del Excel", () => {
       { hoja: "Norte", campos: {}, faltan_opcionales: ["sucursal"], sin_usar: [] },
       { hoja: "Sur", campos: {}, faltan_opcionales: ["sucursal", "zona"], sin_usar: [] },
     ])).toEqual(["«Sucursal» (hoja «Norte», «Sur»)", "«Zona» (hoja «Sur»)"]);
+  });
+
+  it("sugiere la columna que sobra para el dato que falta, si se parece", () => {
+    const m = mapeo({ zona: { obligatoria: false } });
+    const cab = ENCABEZADOS_CUBO.map((e) => ({ "Kg": "Kilos", "Café/Rep": "Datos café", "Cliente Codigo": "Cliente Cod", "Zona": "Otra cosa" } as Record<string, string>)[e] ?? e);
+    const l = leerEncabezados(cab, m);
+    expect(l.faltan).toEqual(["cliente_codigo", "categoria", "kg"].sort((a, b) => Object.keys(CAMPOS).indexOf(a) - Object.keys(CAMPOS).indexOf(b)));
+    expect(sugerencias(l, m)).toEqual(expect.arrayContaining([
+      { campo: "kg", encabezado: "Kilos" }, { campo: "categoria", encabezado: "Datos café" }, { campo: "cliente_codigo", encabezado: "Cliente Cod" },
+    ]));
+    // «Año», «Mes Nom» y «Otra cosa» no se parecen a nada que falte.
+    expect(sugerencias(l, m).map((s) => s.encabezado)).not.toContain("Otra cosa");
+  });
+
+  it("los grupos cubren los 22 datos una sola vez y el nombre del cubo es el inicial", () => {
+    const todos = GRUPOS.flatMap((g) => g.campos);
+    expect(new Set(todos).size).toBe(22);
+    expect(todos.sort()).toEqual(Object.keys(CAMPOS).sort());
+    expect(Object.values(NOMBRE_CUBO).every((n) => (ENCABEZADOS_CUBO as readonly string[]).includes(n))).toBe(true);
   });
 });

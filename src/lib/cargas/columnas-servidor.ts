@@ -2,7 +2,7 @@ import "server-only";
 import { Readable } from "node:stream";
 import { z } from "zod";
 import { createServiceClient } from "@/lib/supabase/server";
-import { CAMPOS, esCampo, normalizarEncabezado, type ColumnasHoja, type MapeoCarga } from "./columnas";
+import { CAMPOS, esCampo, normalizarEncabezado, type Campo, type ColumnasHoja, type MapeoCarga } from "./columnas";
 import { leerMapeo, ordenarXlsx, probarXlsx, type PruebaHoja } from "./ingesta";
 import { BUCKET_CARGAS, MAX_BYTES_CARGA } from "./tipos";
 
@@ -88,8 +88,11 @@ export async function cargasParaProbar(): Promise<CargaParaProbar[]> {
 
 export type Prueba = { carga: CargaParaProbar; hojas: PruebaHoja[] } | { error: string };
 
-/** Lee los encabezados del archivo de una carga con la configuración de ahora. No carga ni cambia nada. */
-export async function probarCarga(id: string): Promise<Prueba> {
+/** Un cambio de un dato que todavía no se guarda, para probarlo antes ("Probar sin guardar"). */
+export type Borrador = z.infer<typeof DatosColumna>;
+
+/** Lee los encabezados del archivo de una carga con la configuración de ahora (o con un borrador). No carga ni cambia nada. */
+export async function probarCarga(id: string, borrador?: Borrador): Promise<Prueba> {
   const svc = createServiceClient();
   const c = await svc.schema("ventas").from("carga").select("id, nombre_archivo, estado, creado_en, columnas, ruta_archivo").eq("id", id).maybeSingle();
   if (c.error || !c.data) return { error: "No existe la carga." };
@@ -99,10 +102,27 @@ export async function probarCarga(id: string): Promise<Prueba> {
   const bytes = Buffer.from(await archivo.data.arrayBuffer());
   if (bytes.length > MAX_BYTES_CARGA || bytes.subarray(0, 2).toString("latin1") !== "PK") return { error: "El archivo no es un Excel (.xlsx) que se pueda leer." };
   try {
-    const hojas = await probarXlsx(Readable.from(await ordenarXlsx(bytes)), await leerMapeo(svc));
+    const mapeo = await leerMapeo(svc);
+    if (borrador) mapeo.columnas = mapeo.columnas.map((x) => (x.campo === borrador.campo ? { ...x, encabezados: borrador.encabezados, obligatoria: borrador.obligatoria } : x));
+    const hojas = await probarXlsx(Readable.from(await ordenarXlsx(bytes)), mapeo);
     const { id: cid, nombre_archivo, estado, creado_en, columnas } = c.data;
     return { carga: { id: cid, nombre_archivo, estado, creado_en, columnas: columnas as ColumnasHoja[] | null }, hojas };
   } catch (e) {
     return { error: `No se pudo leer el archivo (${e instanceof Error ? e.message : e}).` };
   }
+}
+
+/** Agrega un nombre al final de los alternativos de un dato (el arreglo de un clic desde el probador). */
+export async function agregarNombre(campo: Campo, encabezado: string, usuario: string) {
+  const actual = (await configColumnas()).columnas.find((c) => c.campo === campo);
+  if (!actual) return { error: "Ese dato no existe." };
+  if (actual.encabezados.some((e) => normalizarEncabezado(e) === normalizarEncabezado(encabezado))) return { accion: "sin_cambios" };
+  return guardarColumna({ campo, encabezados: [...actual.encabezados, encabezado], obligatoria: actual.obligatoria }, usuario);
+}
+
+/** Agrega una hoja a las que se saltan. */
+export async function saltarHoja(hoja: string, usuario: string) {
+  const c = await configColumnas();
+  if (c.hojasExcluidas.some((h) => normalizarEncabezado(h) === normalizarEncabezado(hoja))) return { accion: "sin_cambios" };
+  return guardarFormato({ fila: c.filaEncabezado, hojas: [...c.hojasExcluidas, hoja] }, usuario);
 }

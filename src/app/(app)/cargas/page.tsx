@@ -53,7 +53,7 @@ export default async function Cargas(props: PageProps<"/cargas">) {
     <div className="space-y-6">
       <div className="space-y-1">
         <h1 className="text-xl font-semibold">Cargas y versiones</h1>
-        <p className="text-sm text-neutral-500">
+        <p className="max-w-prose text-sm text-neutral-500">
           El dashboard y el asistente leen siempre la versión publicada vigente. Cada mes se sube la exportación del mes: reemplaza
           solo los meses que trae el archivo y queda como una versión nueva, con su historial.
         </p>
@@ -73,7 +73,7 @@ export default async function Cargas(props: PageProps<"/cargas">) {
       {gestor && (
         <section className="space-y-3 border border-neutral-200 bg-white p-4">
           <h2 className="text-sm font-semibold">Carga del mes</h2>
-          <ol className="list-decimal space-y-0.5 pl-5 text-sm text-neutral-700">
+          <ol className="max-w-prose list-decimal space-y-0.5 pl-5 text-sm text-neutral-700">
             <li>Exporta del cubo el mes cerrado y súbelo aquí. Las columnas se reconocen por nombre (ver <Link href="/cargas/columnas" className="underline">Columnas del Excel</Link>).</li>
             <li>Revisa las alertas: cambios contra lo publicado, saltos raros, canales nuevos.</li>
             <li>Publica. Si algo salió mal, retira la versión y vuelve a regir la anterior.</li>
@@ -89,13 +89,21 @@ export default async function Cargas(props: PageProps<"/cargas">) {
       {gestor && cargas.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-sm font-semibold">Cargas sin publicar</h2>
-          {cargas.map((c) => <TarjetaCarga key={c.id} c={c} alertas={alertas.get(c.id) ?? []} meses={mesesCarga.get(c.id) ?? []} />)}
+          {cargas.map((c) => <TarjetaCarga key={c.id} c={c} alertas={alertas.get(c.id) ?? []} meses={mesesCarga.get(c.id) ?? []}
+            siguiente={Math.max(0, ...historial.map((v) => v.version)) + 1} mesesVigente={vigente?.meses ?? []} />)}
         </section>
       )}
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold">Versiones publicadas</h2>
-        <div className="border border-neutral-200 bg-white">
+        {/* En el celular la tabla dejaba «Acciones» fuera de la pantalla: ahí va una versión por bloque. */}
+        <ul className="divide-y divide-neutral-200 border border-neutral-200 bg-white sm:hidden">
+          {historial.map((v) => (
+            <TarjetaVersion key={v.version} v={v} vigente={v.version === vigente?.version} gestor={gestor}
+              retirable={historial.some((o) => !o.retirada_en && o.version < v.version)} />
+          ))}
+        </ul>
+        <div className="hidden border border-neutral-200 bg-white sm:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -156,6 +164,32 @@ function FilaVersion({ v, vigente, gestor, retirable }: { v: Version; vigente: b
   );
 }
 
+function TarjetaVersion({ v, vigente, gestor, retirable }: { v: Version; vigente: boolean; gestor: boolean; retirable: boolean }) {
+  return (
+    <li className={`space-y-2 p-3 text-sm ${v.retirada_en ? "text-neutral-400" : ""}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">v{v.version}</span>
+        {vigente ? <Badge>Vigente</Badge> : v.retirada_en ? <Badge variant="outline">Retirada</Badge> : <span className="text-xs text-neutral-500">anterior</span>}
+        <span className="text-xs text-neutral-500">corte {fechaCorta(v.fecha_corte)}{!v.ultimo_mes_cerrado && " · último mes parcial"}</span>
+      </div>
+      <div className="space-y-0.5 text-xs break-words">
+        <div>{v.archivo} · {meses(v.meses)}</div>
+        {v.meses_reemplazados.length > 0 && <div className="text-neutral-500">reemplazó {meses(v.meses_reemplazados)}</div>}
+        <div className="text-neutral-500">Publicada {fechaLocal(v.publicado_en)}{v.publicado_por && ` por ${v.publicado_por}`}</div>
+        {v.notas && <div className="text-neutral-600">{v.notas}</div>}
+        {v.retirada_en && <div className="text-red-700">Retirada el {fechaLocal(v.retirada_en)}: {v.motivo_retiro}</div>}
+        <div>{v.conciliada_bi ? `Conciliada con BI: ${v.conciliada_nota}` : "Sin conciliar con BI"} · <Link href={`/resumen?version=${v.version}`} className="text-neutral-700 underline">Resumen del mes</Link></div>
+      </div>
+      {gestor && vigente && (
+        <div className="flex flex-col items-start gap-2">
+          {!v.conciliada_bi && <FormConciliar version={v.version} />}
+          {retirable && <FormRetirar version={v.version} />}
+        </div>
+      )}
+    </li>
+  );
+}
+
 const TONO: Record<Alerta["nivel"], string> = {
   bloqueo: "border-red-300 bg-red-50 text-red-900",
   revisar: "border-amber-300 bg-amber-50 text-amber-900",
@@ -163,7 +197,10 @@ const TONO: Record<Alerta["nivel"], string> = {
 };
 const ETIQUETA: Record<Alerta["nivel"], string> = { bloqueo: "Bloquea", revisar: "Revisar", info: "Info" };
 
-function TarjetaCarga({ c, alertas, meses: m }: { c: FilaCarga; alertas: Alerta[]; meses: Mes[] }) {
+function TarjetaCarga({ c, alertas, meses: m, siguiente, mesesVigente }: { c: FilaCarga; alertas: Alerta[]; meses: Mes[]; siguiente: number; mesesVigente: { anio: number; mes: number }[] }) {
+  const enVigente = new Set(mesesVigente.map((x) => x.anio * 12 + x.mes));
+  const orden = [...m].sort((a, b) => a.anio * 12 + a.mes - (b.anio * 12 + b.mes));
+  const reemplaza = orden.filter((x) => enVigente.has(x.anio * 12 + x.mes)), agrega = orden.filter((x) => !enVigente.has(x.anio * 12 + x.mes));
   const estado = ESTADO_CARGA[c.estado] ?? { txt: c.estado, variante: "outline" as const };
   const ultimo = [...m].sort((a, b) => a.anio * 12 + a.mes - (b.anio * 12 + b.mes)).at(-1);
   return (
@@ -183,10 +220,12 @@ function TarjetaCarga({ c, alertas, meses: m }: { c: FilaCarga; alertas: Alerta[
           {c.estado !== "procesando" && <Descartar id={c.id} />}
         </div>
       </div>
-      {c.error && <p className="text-sm text-red-700 break-words">{c.error}</p>}
+      {c.error && <p role="alert" className="max-w-prose text-sm text-red-700 break-words">{c.error}</p>}
       {c.error && /columna|encabezado/i.test(c.error) && (
         <p className="text-xs text-neutral-600">
-          <Link href={`/cargas/columnas?probar=${c.id}#probar`} className="underline">Revisar las columnas de este archivo</Link>
+          <Link href={`/cargas/columnas?probar=${c.id}#probar`} className="inline-flex h-8 items-center border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50">
+            Arreglar las columnas de este archivo
+          </Link>
         </p>
       )}
       {c.estado === "validada" && (
@@ -204,8 +243,10 @@ function TarjetaCarga({ c, alertas, meses: m }: { c: FilaCarga; alertas: Alerta[
             </p>
           )}
           {ultimo && (
-            <FormPublicar id={c.id} ultimoMes={periodoLargo(ultimo)} mesCompletoSugerido={!esParcial(ultimo)}
-              hayRevisar={alertas.some((a) => a.nivel === "revisar")} bloqueada={alertas.some((a) => a.nivel === "bloqueo")} />
+            <FormPublicar id={c.id} ultimoMes={periodoLargo(ultimo)} mesCompletoSugerido={!esParcial(ultimo)} version={siguiente}
+              reemplaza={reemplaza.length ? meses(reemplaza) : null} agrega={agrega.length ? meses(agrega) : null}
+              hayRevisar={alertas.some((a) => a.nivel === "revisar")}
+              bloqueo={alertas.some((a) => a.nivel === "bloqueo") ? "hay una alerta «Bloquea» arriba; corrige el archivo y súbelo de nuevo." : null} />
           )}
         </>
       )}

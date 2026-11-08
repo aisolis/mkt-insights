@@ -174,6 +174,7 @@ export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada:
       c.columnas.push({
         hoja: x.hoja, campos: Object.fromEntries(x.lectura.encontrados.map((e) => [e.campo, e.encabezado])),
         faltan_opcionales: x.lectura.faltanOpcionales, sin_usar: x.lectura.sinUsar,
+        descartadas: x.lectura.descartadas.map(({ campo, encabezado }) => ({ campo, encabezado })),
       });
     } else {
       c.hojasIgnoradas.push(x.hoja);
@@ -181,7 +182,9 @@ export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada:
     }
   }
   if (!hojas.some((x) => x.lectura?.valida)) {
-    const motivo = hojas.find((x) => x.motivo)?.motivo;
+    // El motivo de la hoja más cerca de cargarse (la de ventas con una columna renombrada), no el del primer resumen.
+    const faltan = (x: HojaLeida) => (x.lectura ? x.lectura.faltan.length + x.lectura.repetidos.length : Infinity);
+    const motivo = hojas.filter((x) => x.motivo).sort((a, b) => faltan(a) - faltan(b))[0]?.motivo;
     throw new Error(motivo
       ? `${motivo} Si la columna cambió de nombre, agrégalo en Cargas → Columnas del Excel y pulsa Reintentar.`
       : "El archivo no tiene hojas con datos de venta.");

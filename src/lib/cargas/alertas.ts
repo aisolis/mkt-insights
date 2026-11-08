@@ -70,9 +70,9 @@ export function alertasCarga(carga: Mes[], vigente: Mes[], hoy: string, hojasIgn
     if (m.canales_sin_homologar.length)
       a.push({ nivel: "revisar", texto: `${nombre}: canales sin homologar (${m.canales_sin_homologar.join(", ")}); se mostrarán con su nombre de origen.` });
     if (m.duplicados > m.filas * 0.02)
-      a.push({ nivel: "revisar", texto: `${nombre}: ${conteo(m.duplicados)} filas repetidas (${((m.duplicados / m.filas) * 100).toFixed(1)}%). Se conservan y se marcan (S3).` });
+      a.push({ nivel: "revisar", texto: `${nombre}: ${conteo(m.duplicados)} filas repetidas (${((m.duplicados / m.filas) * 100).toFixed(1)}%). Se conservan y quedan marcadas.` });
     if (m.discrepancias)
-      a.push({ nivel: "info", texto: `${nombre}: ${conteo(m.discrepancias)} filas donde bruta − descuentos ≠ neta; se usa la venta neta del archivo (S3).` });
+      a.push({ nivel: "info", texto: `${nombre}: ${conteo(m.discrepancias)} filas donde bruta − descuentos ≠ neta; se usa la venta neta del archivo.` });
   }
 
   const ultimo = nuevos.at(-1)!;

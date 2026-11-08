@@ -2,37 +2,101 @@
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { guardarColumnaAccion, guardarFormatoAccion, type Estado } from "./acciones";
+import { Textarea } from "@/components/ui/textarea";
+import { agregarNombreAccion, guardarColumnaAccion, guardarFormatoAccion, probarBorradorAccion, saltarHojaAccion, type Estado } from "./acciones";
 
 function Aviso({ estado }: { estado: Estado }) {
   if (!estado?.error && !estado?.ok) return null;
-  return <p role={estado.error ? "alert" : "status"} className={`text-sm ${estado.error ? "text-red-700" : "text-emerald-700"}`}>{estado.error ?? estado.ok}</p>;
+  return <p role={estado.error ? "alert" : "status"} className={`max-w-prose text-sm ${estado.error ? "text-red-700" : "text-emerald-800"}`}>{estado.error ?? estado.ok}</p>;
 }
 
-/** Nombres aceptados de un campo (uno por línea) y, si el campo puede faltar, si es obligatorio. */
-export function FormColumna({ campo, encabezados, obligatoria, puedeFaltar }: { campo: string; encabezados: string[]; obligatoria: boolean; puedeFaltar: boolean }) {
-  const [estado, accion, enviando] = useActionState(guardarColumnaAccion, null);
+/** Lista nativa con el mismo aspecto que los campos de texto (foco visible incluido). */
+export const CLASE_LISTA = "block h-8 w-full min-w-0 border border-input bg-background px-2 text-sm focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
+
+/**
+ * Nombre principal y alternativos de un dato, y si la columna puede faltar. «Probar sin guardar» lee el archivo
+ * elegido arriba con este borrador; «Guardar» lo deja para las próximas cargas.
+ */
+export function FormColumna({ campo, etiqueta, principal, alternativos, obligatoria, puedeFaltar, probarId, archivo }: {
+  campo: string; etiqueta: string; principal: string; alternativos: string[]; obligatoria: boolean; puedeFaltar: boolean; probarId: string | null; archivo: string | null;
+}) {
+  const [guardado, guardar, guardando] = useActionState(guardarColumnaAccion, null);
+  const [prueba, probar, probando] = useActionState(probarBorradorAccion, null);
+  const id = `dato-${campo}`;
   return (
-    <form action={accion} className="space-y-3">
+    <form action={guardar} className="space-y-3">
       <input type="hidden" name="campo" value={campo} />
-      <label className="block space-y-1 text-sm">
-        <span className="text-neutral-700">Nombres de columna aceptados, uno por línea</span>
-        <textarea name="encabezados" defaultValue={encabezados.join("\n")} required rows={Math.min(8, Math.max(3, encabezados.length + 1))}
-          className="block w-full min-w-0 border border-input bg-background px-2 py-1.5 font-mono text-sm" />
-        <span className="block text-xs text-neutral-500">No importan mayúsculas, tildes, espacios ni signos: «Café/Rep» también acepta «CAFE REP».</span>
-      </label>
-      {puedeFaltar ? (
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" name="obligatoria" defaultChecked={obligatoria} className="mt-1" />
-          <span>Obligatoria: si el archivo no la trae, la hoja no se carga. Sin marcar, se carga vacía y la carga lo avisa antes de publicar.</span>
-        </label>
-      ) : (
-        <input type="hidden" name="obligatoria" value="on" />
-      )}
-      <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" disabled={enviando}>{enviando ? "Guardando…" : "Guardar"}</Button>
-        <Aviso estado={estado} />
+      {probarId && <input type="hidden" name="probar" value={probarId} />}
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
+        <div className="space-y-1 text-sm">
+          <label htmlFor={`${id}-principal`} className="block text-neutral-700">Nombre principal</label>
+          <Input id={`${id}-principal`} name="principal" defaultValue={principal} required maxLength={100} className="h-8 font-mono text-sm md:text-sm" />
+          <p className="text-xs text-neutral-500">El que trae la exportación del cubo. Se usa primero.</p>
+        </div>
+        <div className="min-w-0 space-y-1 text-sm">
+          <label htmlFor={`${id}-alternativos`} className="block text-neutral-700">Alternativos, uno por línea, en orden</label>
+          <Textarea id={`${id}-alternativos`} name="alternativos" defaultValue={alternativos.join("\n")} rows={3} className="min-h-20 font-mono text-sm md:text-sm" />
+          <p className="text-xs text-neutral-500">Si el archivo no trae el principal, se usa el primero de estos que venga.</p>
+        </div>
       </div>
+      {puedeFaltar && (
+        <label className="flex max-w-prose items-start gap-2 text-sm">
+          <input type="checkbox" name="puedeFaltar" defaultChecked={!obligatoria} className="mt-1 size-4" />
+          <span>Puede faltar en el archivo. Se carga vacía y la carga lo avisa antes de publicar. Sin marcar, una hoja sin esta columna no se carga.</span>
+        </label>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" disabled={guardando}>{guardando ? "Guardando…" : `Guardar ${etiqueta.toLowerCase()}`}</Button>
+        {probarId ? (
+          <Button type="submit" variant="outline" formAction={probar} disabled={probando}>
+            {probando ? "Leyendo el archivo…" : `Probar sin guardar con ${archivo}`}
+          </Button>
+        ) : (
+          <span className="text-xs text-neutral-500">Elige un archivo arriba para probar sin guardar.</span>
+        )}
+      </div>
+      <Aviso estado={prueba} />
+      <Aviso estado={guardado} />
+    </form>
+  );
+}
+
+/** Arreglo desde el probador: usar la columna sugerida, o elegir otra de las que sobran, como nombre alternativo. */
+export function ArreglarDato({ campo, etiqueta, sugerida, sobran }: { campo: string; etiqueta: string; sugerida: string | null; sobran: string[] }) {
+  const [estado, accion, enviando] = useActionState(agregarNombreAccion, null);
+  if (!sugerida && !sobran.length) return null;
+  return (
+    <form action={accion} className="mt-1 space-y-1">
+      <input type="hidden" name="campo" value={campo} />
+      <div className="flex flex-wrap items-center gap-2">
+        {sugerida && (
+          <Button type="submit" name="encabezado" value={sugerida} size="sm" className="h-8" disabled={enviando}>
+            Usar «{sugerida}» para {etiqueta.toLowerCase()}
+          </Button>
+        )}
+        {sobran.length > 0 && (
+          <span className="flex min-w-0 items-center gap-1">
+            <label className="sr-only" htmlFor={`sobra-${campo}`}>Otra columna del archivo para {etiqueta}</label>
+            <select id={`sobra-${campo}`} name="elegido" defaultValue="" className={`${CLASE_LISTA} max-w-48 text-xs`}>
+              <option value="">{sugerida ? "u otra columna…" : "Elegir columna…"}</option>
+              {sobran.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <Button type="submit" variant="outline" size="sm" className="h-8" disabled={enviando}>Usar</Button>
+          </span>
+        )}
+      </div>
+      <Aviso estado={estado} />
+    </form>
+  );
+}
+
+export function SaltarHoja({ hoja }: { hoja: string }) {
+  const [estado, accion, enviando] = useActionState(saltarHojaAccion, null);
+  return (
+    <form action={accion} className="space-y-1">
+      <input type="hidden" name="hoja" value={hoja} />
+      <Button type="submit" variant="outline" size="sm" className="h-8" disabled={enviando}>Saltar esta hoja siempre</Button>
+      <Aviso estado={estado} />
     </form>
   );
 }
@@ -42,19 +106,19 @@ export function FormFormato({ fila, hojas }: { fila: number; hojas: string[] }) 
   return (
     <form action={accion} className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-[12rem_minmax(0,1fr)]">
-        <label className="block space-y-1 text-sm">
-          <span className="text-neutral-700">Fila de los encabezados</span>
-          <Input name="fila" type="number" min={1} max={50} defaultValue={fila} required className="h-9 text-sm md:text-sm" />
-          <span className="block text-xs text-neutral-500">Las filas de arriba (títulos, filtros) se saltan.</span>
-        </label>
-        <label className="block min-w-0 space-y-1 text-sm">
-          <span className="text-neutral-700">Hojas que se saltan, una por línea</span>
-          <textarea name="hojas" defaultValue={hojas.join("\n")} rows={3} className="block w-full min-w-0 border border-input bg-background px-2 py-1.5 font-mono text-sm" />
-          <span className="block text-xs text-neutral-500">Para hojas de apoyo que no son ventas. Las demás hojas sin las columnas también se saltan, pero la carga lo avisa.</span>
-        </label>
+        <div className="space-y-1 text-sm">
+          <label htmlFor="formato-fila" className="block text-neutral-700">Fila de los encabezados</label>
+          <Input id="formato-fila" name="fila" type="number" min={1} max={50} defaultValue={fila} required className="h-8 text-sm md:text-sm" />
+          <p className="text-xs text-neutral-500">Las filas de arriba (títulos, filtros) se saltan.</p>
+        </div>
+        <div className="min-w-0 space-y-1 text-sm">
+          <label htmlFor="formato-hojas" className="block text-neutral-700">Hojas que se saltan, una por línea</label>
+          <Textarea id="formato-hojas" name="hojas" defaultValue={hojas.join("\n")} rows={3} className="min-h-20 font-mono text-sm md:text-sm" />
+          <p className="max-w-prose text-xs text-neutral-500">Hojas de apoyo que no son ventas. Las demás hojas sin las columnas también se saltan, pero la carga lo avisa.</p>
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" disabled={enviando}>{enviando ? "Guardando…" : "Guardar"}</Button>
+        <Button type="submit" disabled={enviando}>{enviando ? "Guardando…" : "Guardar formato"}</Button>
         <Aviso estado={estado} />
       </div>
     </form>

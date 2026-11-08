@@ -66,7 +66,8 @@
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* Foco visible con contraste ≥ 3:1 sobre blanco (antes 0.708 al 50 %: casi invisible). */
+  --ring: oklch(0.371 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -126,5 +127,10 @@
   }
   html {
     @apply font-mono;
+  }
+  /* Controles nativos (resúmenes desplegables, casillas, listas, enlaces): el mismo foco que los componentes. */
+  :where(summary, a, input[type="checkbox"], input[type="radio"], select, textarea):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
 }

@@ -14,7 +14,7 @@ Exporta del cubo **solo el mes que cerró**, con las columnas de siempre:
 Fecha · Ruta · Empresa · Marca · Café/Rep · Proveedor · Cliente Codigo · Cliente Nombre · Zona · Documento · Año · Mes Nom · Grupo · Canal BIA · ArtCodigo · ArtDescrip · Cantidad · Venta Bruta · Descuentos · Venta Neta · Kg · Fardos/Caja · Subgrupo · Sucursal
 
 - Las columnas se reconocen **por nombre**: el orden no importa, ni las mayúsculas, tildes o signos. Columnas de más se ignoran.
-- Si el cubo cambia el nombre de una columna (por ejemplo, «Café/Rep» pasa a «Datos café»), agrega el nombre nuevo en **Cargas y versiones → Columnas del Excel**. Ahí también se configuran la fila de los encabezados, las hojas que se saltan y qué columnas descriptivas pueden faltar.
+- Si el cubo cambia el nombre de una columna (por ejemplo, «Kg» pasa a «Kilos»), la carga falla con «falta la columna de …». Pulsa **Arreglar las columnas de este archivo**: la plataforma sugiere la columna que sobra («Usar «Kilos» para kilos»), la agrega como nombre alternativo y deja **Reintentar** a mano. En **Columnas del Excel** también se configuran el nombre principal y los alternativos de cada dato, la fila de los encabezados, las hojas que se saltan y qué columnas descriptivas pueden faltar.
 
 - El archivo debe ser `.xlsx` y pesar menos de 50 MB. Un mes son unas 60 mil filas, alrededor de 7 MB.
 - Si necesitas corregir meses anteriores, inclúyelos en el mismo archivo o súbelos en otro. Cada mes que venga en un archivo **reemplaza** lo publicado de ese mes.

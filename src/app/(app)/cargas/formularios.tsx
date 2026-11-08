@@ -29,6 +29,7 @@ export function FormCargar() {
   const router = useRouter();
   const form = useRef<HTMLFormElement>(null);
   const [paso, setPaso] = useState<Paso>(null);
+  const [nombre, setNombre] = useState<string | null>(null);
   const trabajando = paso?.tipo === "trabajando";
 
   async function enviar(datos: FormData) {
@@ -58,13 +59,20 @@ export function FormCargar() {
   }
 
   return (
-    <form ref={form} action={enviar} className="flex flex-wrap items-end gap-3">
-      <label className="block space-y-1 text-sm">
-        <span className="text-neutral-700">Excel del mes (.xlsx, máx. 50 MB)</span>
-        <input name="archivo" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required className="block text-sm" />
-      </label>
-      <Button type="submit" size="lg" disabled={trabajando}>{trabajando ? "Procesando…" : "Subir y validar"}</Button>
-      <div className="w-full"><Aviso paso={paso} /></div>
+    <form ref={form} action={enviar} onReset={() => setNombre(null)} className="space-y-2">
+      <p id="archivo-ayuda" className="text-sm text-neutral-700">Excel del mes (.xlsx, máx. 50 MB)</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {/* El selector nativo dice «Choose File» según el idioma del navegador: se esconde y lo reemplaza este botón. */}
+        <label className="inline-flex h-8 cursor-pointer items-center border border-neutral-300 bg-white px-3 text-sm font-medium hover:bg-neutral-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
+          Elegir archivo
+          <input name="archivo" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required aria-describedby="archivo-ayuda"
+            className="sr-only" onChange={(e) => setNombre(e.target.files?.[0]?.name ?? null)} />
+        </label>
+        <span className="min-w-0 truncate text-sm text-neutral-600" aria-live="polite">{nombre ?? "Ningún archivo elegido"}</span>
+        <Button type="submit" disabled={trabajando || !nombre}>{trabajando ? "Procesando…" : "Subir y validar"}</Button>
+      </div>
+      {trabajando && <p className="text-xs text-neutral-500">No cierres esta página mientras se procesa.</p>}
+      <Aviso paso={paso} />
     </form>
   );
 }
@@ -74,7 +82,7 @@ export function Reintentar({ id }: { id: string }) {
   const [paso, setPaso] = useState<Paso>(null);
   return (
     <span className="inline-flex flex-col items-start gap-1">
-      <Button variant="outline" size="xs" disabled={paso?.tipo === "trabajando"} onClick={async () => {
+      <Button variant="outline" size="default" disabled={paso?.tipo === "trabajando"} onClick={async () => {
         setPaso({ tipo: "trabajando", texto: "Procesando…" });
         const r = await procesarEnServidor(id);
         setPaso(r.estado === "validada" ? null : { tipo: "error", texto: r.error ?? "No se pudo procesar." });
@@ -91,37 +99,51 @@ export function Descartar({ id }: { id: string }) {
     <form action={accion} className="inline-flex flex-col items-start gap-1"
       onSubmit={(e) => { if (!confirm("¿Descartar esta carga? Se borran sus filas y el archivo.")) e.preventDefault(); }}>
       <input type="hidden" name="id" value={id} />
-      <Button type="submit" variant="outline" size="xs" disabled={enviando}>Descartar</Button>
+      <Button type="submit" variant="outline" size="default" disabled={enviando}>Descartar</Button>
       {estado?.error && <Aviso paso={estado} />}
     </form>
   );
 }
 
-/** Publicar: notas, si el último mes está completo y, si hay alertas para revisar, la confirmación. */
-export function FormPublicar({ id, mesCompletoSugerido, ultimoMes, hayRevisar, bloqueada }: {
-  id: string; mesCompletoSugerido: boolean; ultimoMes: string; hayRevisar: boolean; bloqueada: boolean;
+/**
+ * Publicar: lo que va a cambiar (versión, meses que reemplaza y agrega), notas, si el último mes está completo y, si
+ * hay alertas para revisar, la confirmación. Bloqueada, dice por qué junto al botón.
+ */
+export function FormPublicar({ id, mesCompletoSugerido, ultimoMes, hayRevisar, bloqueo, version, reemplaza, agrega }: {
+  id: string; mesCompletoSugerido: boolean; ultimoMes: string; hayRevisar: boolean; bloqueo: string | null; version: number; reemplaza: string | null; agrega: string | null;
 }) {
   const [estado, accion, enviando] = useActionState(publicarCarga, null);
+  const cambios = [reemplaza && `reemplaza ${reemplaza}`, agrega && `agrega ${agrega}`].filter(Boolean).join(" y ");
   return (
-    <form action={accion} className="space-y-2 border-t border-neutral-200 pt-3">
+    <form action={accion} className="space-y-3 border-t border-neutral-200 pt-4">
       <input type="hidden" name="id" value={id} />
-      <Textarea name="notas" rows={2} maxLength={500} placeholder="Notas de la versión (opcional): qué trae, quién exportó, observaciones…" />
-      <label className="flex items-start gap-2 text-sm">
-        <input type="checkbox" name="mesCompleto" defaultChecked={mesCompletoSugerido} className="mt-1" />
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold">Publicar como v{version}</h3>
+        <p className="max-w-prose text-sm text-neutral-700">
+          Al publicar, v{version} {cambios || "queda como versión vigente"}. El dashboard, el resumen y el asistente cambian al instante para todo el
+          equipo; la versión anterior queda en el historial y se puede volver a ella retirando esta.
+        </p>
+      </div>
+      <Textarea name="notas" rows={2} maxLength={500} aria-label="Notas de la versión" placeholder="Notas de la versión (opcional): qué trae, quién exportó, observaciones…" />
+      <label className="flex max-w-prose items-start gap-2 text-sm">
+        <input type="checkbox" name="mesCompleto" defaultChecked={mesCompletoSugerido} className="mt-1 size-4" />
         <span>{ultimoMes} está completo (mes cerrado). Si no, se marca como parcial y las comparaciones lo advierten.</span>
       </label>
       {hayRevisar && (
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" name="revisado" required className="mt-1" />
-          <span>Revisé las alertas y las cifras son correctas.</span>
+        <label className="flex max-w-prose items-start gap-2 text-sm">
+          <input type="checkbox" name="revisado" required className="mt-1 size-4" />
+          <span>Revisé cada alerta marcada «Revisar» y las cifras son correctas.</span>
         </label>
       )}
-      <label className="flex items-start gap-2 text-sm">
-        <input type="checkbox" name="correo" className="mt-1" />
-        <span>Enviar el resumen por correo al equipo (personas con acceso activo). Va el resumen del último mes cerrado de la versión nueva.</span>
+      <label className="flex max-w-prose items-start gap-2 text-sm">
+        <input type="checkbox" name="correo" className="mt-1 size-4" />
+        <span>Enviar el resumen por correo a cada persona con acceso activo (el del último mes cerrado de v{version}).</span>
       </label>
-      <div className="flex items-center gap-3">
-        <Button type="submit" size="lg" disabled={enviando || bloqueada}>{enviando ? "Publicando…" : "Publicar versión"}</Button>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" size="lg" className="px-4" disabled={enviando || !!bloqueo} aria-describedby={bloqueo ? `bloqueo-${id}` : undefined}>
+          {enviando ? "Publicando…" : `Publicar v${version}`}
+        </Button>
+        {bloqueo && <p id={`bloqueo-${id}`} className="max-w-prose text-sm text-red-700">No se puede publicar: {bloqueo}</p>}
         <Aviso paso={estado} />
       </div>
     </form>
@@ -131,14 +153,14 @@ export function FormPublicar({ id, mesCompletoSugerido, ultimoMes, hayRevisar, b
 export function FormRetirar({ version }: { version: number }) {
   const [estado, accion, enviando] = useActionState(retirarVersion, null);
   const [abierto, setAbierto] = useState(false);
-  if (!abierto) return <Button variant="outline" size="xs" onClick={() => setAbierto(true)}>Retirar</Button>;
+  if (!abierto) return <Button variant="outline" size="default" onClick={() => setAbierto(true)}>Retirar</Button>;
   return (
     <form action={accion} className="space-y-2">
       <input type="hidden" name="version" value={version} />
       <Input name="motivo" required minLength={5} maxLength={300} placeholder="Motivo del retiro" className="h-8" />
       <div className="flex gap-2">
-        <Button type="submit" variant="destructive" size="xs" disabled={enviando}>Retirar v{version}</Button>
-        <Button type="button" variant="ghost" size="xs" onClick={() => setAbierto(false)}>Cancelar</Button>
+        <Button type="submit" variant="destructive" size="default" disabled={enviando}>Retirar v{version}</Button>
+        <Button type="button" variant="ghost" size="default" onClick={() => setAbierto(false)}>Cancelar</Button>
       </div>
       <Aviso paso={estado} />
     </form>
@@ -148,14 +170,14 @@ export function FormRetirar({ version }: { version: number }) {
 export function FormConciliar({ version }: { version: number }) {
   const [estado, accion, enviando] = useActionState(conciliarVersion, null);
   const [abierto, setAbierto] = useState(false);
-  if (!abierto) return <Button variant="outline" size="xs" onClick={() => setAbierto(true)}>Marcar conciliada con BI</Button>;
+  if (!abierto) return <Button variant="outline" size="default" onClick={() => setAbierto(true)}>Marcar conciliada con BI</Button>;
   return (
     <form action={accion} className="space-y-2">
       <input type="hidden" name="version" value={version} />
       <Textarea name="nota" required minLength={10} maxLength={500} rows={2} placeholder="Reporte de BI usado y qué coincidió (p. ej. «Reporte BI sep-2026: venta neta y kg por canal iguales al centavo»)" />
       <div className="flex gap-2">
-        <Button type="submit" size="xs" disabled={enviando}>Confirmar conciliación</Button>
-        <Button type="button" variant="ghost" size="xs" onClick={() => setAbierto(false)}>Cancelar</Button>
+        <Button type="submit" size="default" disabled={enviando}>Confirmar conciliación</Button>
+        <Button type="button" variant="ghost" size="default" onClick={() => setAbierto(false)}>Cancelar</Button>
       </div>
       <Aviso paso={estado} />
     </form>

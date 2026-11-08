@@ -101,6 +101,12 @@ describe.skipIf(!url || !service)("carga mensual contra el Supabase local", () =
     expect(r).toMatchObject({ estado: "con_errores", error: expect.stringMatching(/falta la columna de empresa \(se acepta como «Empresa»\).*Encabezados del archivo: «Fecha», «Ruta», «Otra»/) });
   });
 
+  it("el error nombra la hoja de ventas a la que le falta una columna, no el resumen que viene antes", async () => {
+    const archivo = await xlsxDePrueba([{ fecha: new Date(Date.UTC(2026, 9, 3)), canal, ventaNeta: 7 }], undefined, true, { renombrar: { Kg: "Kilos" } });
+    const r = await procesarCarga(svc, await subir("kilos.xlsx", archivo));
+    expect(r).toMatchObject({ estado: "con_errores", error: expect.stringMatching(/^Hoja «Hoja1» \(fila 1\): falta la columna de kilos \(se acepta como «Kg»\)/) });
+  });
+
   it("columnas configurables: nombre nuevo, otro orden, opcional que falta y fila de encabezados (S26)", { timeout: 60_000 }, async () => {
     const ventas = svc.schema("ventas");
     const antes = (await ventas.from("columna_carga").select("campo, encabezados, obligatoria").in("campo", ["categoria", "sucursal"])).data!;
