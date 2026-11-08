@@ -16,3 +16,10 @@ export const fechaHora = (instante: string) => FECHA_HORA.format(new Date(instan
 
 const UNO = new Intl.NumberFormat("es-HN", { maximumFractionDigits: 1 });
 export const segundos = (s: number) => UNO.format(s);
+
+const MILES = new Intl.NumberFormat("es-HN", { maximumFractionDigits: 0 });
+/** «12,345». */
+export const miles = (n: number) => MILES.format(n);
+
+/** Valoración de la persona (G9). */
+export const VALORACION_TXT = { true: "👍 Le sirvió", false: "👎 No le sirvió" } as const;

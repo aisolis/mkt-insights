@@ -1,9 +1,12 @@
 import "server-only";
 import { z } from "zod";
+import { enviarCorreo } from "@/lib/correo";
+import { kpiPeriodo, variacionPorDimension } from "@/lib/semantic/queries";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { alertasCarga } from "./alertas";
-import { mesesParaAlertas } from "./composicion";
+import { canalesParaAlertas, mesesParaAlertas } from "./composicion";
 import { procesarCarga } from "./ingesta";
+import { correoResumen, datosResumen, rutaResumen, type FuenteResumen, type VersionResumen } from "./resumen";
 import { BUCKET_CARGAS, MAX_BYTES_CARGA, type Alerta, type FilaCarga, type Version } from "./tipos";
 
 /** Historial de versiones con la sesión de la persona (cualquiera con acceso). */
@@ -12,6 +15,39 @@ export async function versiones(): Promise<Version[]> {
   const { data, error } = await supabase.schema("ventas").rpc("versiones");
   if (error) throw new Error(`versiones: ${error.message}`);
   return data as Version[];
+}
+
+/** Cabecera y periodos de una versión publicada (la vigente si n es nulo), con la sesión de la persona. */
+export async function versionPublicada(n: number | null): Promise<VersionResumen | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema("ventas").rpc("version_publicada", { p_version: n });
+  if (error) throw new Error(`version_publicada: ${error.message}`);
+  return data as VersionResumen | null;
+}
+
+/** El resumen ejecutivo con la sesión de la persona (página y correo al publicar). */
+export const fuenteResumen: FuenteResumen = { version: versionPublicada, kpiPeriodo, variacionPorDimension };
+
+export type EstadoCorreo = "enviado" | "desarrollo" | "error";
+
+/**
+ * Envía el resumen del último mes cerrado de la versión recién publicada a las personas con perfil activo.
+ * Nunca hace fallar la publicación: si algo sale mal devuelve "error" y lo deja en el log.
+ */
+export async function enviarResumenPublicado(version: number, origen: string): Promise<EstadoCorreo> {
+  try {
+    const resumen = await datosResumen(fuenteResumen, { version: String(version) });
+    if (!resumen) return "error";
+    const { data, error } = await createServiceClient().schema("ventas").rpc("correos_equipo");
+    if (error) throw new Error(`correos_equipo: ${error.message}`);
+    const correo = correoResumen(resumen, `${origen}${rutaResumen(resumen)}`);
+    const r = await enviarCorreo({ para: data as string[], ...correo });
+    if (r.estado === "error") console.error(`[correo] resumen v${version}: ${r.error}`);
+    return r.estado;
+  } catch (e) {
+    console.error(`[correo] resumen v${version}:`, e);
+    return "error";
+  }
 }
 
 // Gestión (service_role). La llaman server actions y route handlers que ya verificaron requerirGestorCargas(). -----
@@ -32,12 +68,13 @@ export async function mesesDeCargas(cargaIds: string[]) {
 
 export async function alertasDe(cargaIds: string[]): Promise<Map<string, Alerta[]>> {
   const svc = createServiceClient();
-  const [{ porCarga, vigente }, hojas] = await Promise.all([
+  const [{ porCarga, vigente }, hojas, canales] = await Promise.all([
     mesesParaAlertas(svc, cargaIds),
     svc.schema("ventas").from("carga").select("id, hojas_ignoradas").in("id", cargaIds),
+    canalesParaAlertas(svc, cargaIds),
   ]);
   const ignoradas = new Map((hojas.data ?? []).map((c) => [c.id as string, (c.hojas_ignoradas ?? []) as string[]]));
-  return new Map(cargaIds.map((id) => [id, alertasCarga(porCarga.get(id) ?? [], vigente, hoyHN(), ignoradas.get(id))]));
+  return new Map(cargaIds.map((id) => [id, alertasCarga(porCarga.get(id) ?? [], vigente, hoyHN(), ignoradas.get(id), canales.get(id))]));
 }
 
 export const MetaCarga = z.object({

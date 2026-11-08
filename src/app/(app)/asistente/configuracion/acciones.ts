@@ -2,7 +2,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requerirAdmin } from "@/lib/auth/acceso";
-import { guardarConfig, probarModelo, type ResultadoPrueba } from "@/lib/asistente/config-servidor";
+import { guardarConfig, guardarTope, probarModelo, type ResultadoPrueba } from "@/lib/asistente/config-servidor";
+import { usd } from "@/lib/asistente/dinero";
 
 export type EstadoConfig = { error?: string; ok?: string } | null;
 
@@ -24,9 +25,23 @@ const Prueba = z.object({ modelo: z.string().trim().min(3).max(120), pregunta: z
 
 /** Responde una pregunta con el modelo elegido, sin guardar nada. Gasta tokens de OpenRouter. */
 export async function probar(_: EstadoPrueba, form: FormData): Promise<EstadoPrueba> {
-  await requerirAdmin();
+  const admin = await requerirAdmin();
   const d = Prueba.safeParse({ modelo: form.get("modeloPrueba"), pregunta: form.get("pregunta") });
   if (!d.success) return { error: "Elige un modelo y escribe una pregunta." };
-  const r = await probarModelo(d.data.modelo, d.data.pregunta);
+  const r = await probarModelo(d.data.modelo, d.data.pregunta, admin.id);
+  // El costo de la prueba cuenta para el gasto del mes que muestra la página.
+  revalidatePath("/asistente/configuracion");
   return "error" in r ? { error: r.error } : { resultado: r };
+}
+
+/** Tope de gasto mensual en dólares ("" = sin tope). Acepta coma o punto decimal. */
+export async function guardarTopeMensual(_: EstadoConfig, form: FormData): Promise<EstadoConfig> {
+  const admin = await requerirAdmin();
+  const crudo = String(form.get("tope") ?? "").trim().replace(/\s|US\$|\$/gi, "").replace(",", ".");
+  const tope = crudo === "" ? null : Number(crudo);
+  if (tope !== null && (!Number.isFinite(tope) || tope <= 0)) return { error: "Escribe un monto en dólares mayor que cero, o déjalo vacío para no tener tope." };
+  const r = await guardarTope(tope, admin.id);
+  if (r.error) return { error: r.error };
+  revalidatePath("/asistente/configuracion");
+  return { ok: tope === null ? "Guardado: sin tope de gasto." : `Guardado: tope de ${usd(tope)} al mes.` };
 }

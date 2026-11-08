@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { aCita, type Cita } from "@/lib/conocimiento/tipos";
 import { fechaCorta, periodoLargo } from "@/lib/format";
+import { usd } from "./dinero";
 import { describirFiltros, periodoTxt } from "./texto";
 import { ErrorHerramienta, ejecutar, herramientasModelo } from "./herramientas";
 import type { Contexto, Resultado, Turno } from "./tipos";
@@ -27,6 +28,89 @@ export function configModelo(elegida?: { usarIa: boolean; modelo: string | null 
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   if (!apiKey || elegida?.usarIa === false) return null;
   return { apiKey, modelo: elegida?.modelo || modeloPorDefecto() };
+}
+
+// Modelos permitidos (G9) -----------------------------------------------------------------------------------------
+
+/**
+ * Lista de modelos permitidos del entorno (OPENROUTER_MODELOS_PERMITIDOS, separados por coma). Acepta ids
+ * exactos («anthropic/claude-sonnet-5.5») y comodín por proveedor («anthropic/*»). Sin la variable: null, todos.
+ */
+export function modelosPermitidos(valor = process.env.OPENROUTER_MODELOS_PERMITIDOS): string[] | null {
+  const lista = (valor ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  return lista.length ? lista : null;
+}
+
+/** Si el modelo está en la lista (sin lista, todos lo están). «proveedor/*» cubre todos los de ese proveedor. */
+export function modeloPermitido(id: string, lista: string[] | null = modelosPermitidos()): boolean {
+  if (!lista) return true;
+  const m = id.trim().toLowerCase();
+  return lista.some((p) => p === "*" || (p.endsWith("/*") ? m.startsWith(p.slice(0, -1)) && m.length > p.length - 1 : p === m));
+}
+
+// Uso y costo (G9) ------------------------------------------------------------------------------------------------
+
+/**
+ * Lo que gastó una pregunta en OpenRouter, sumado en todas las rondas de herramientas. `costoUsd` es lo que
+ * OpenRouter informó (créditos = dólares); los tokens de rondas sin costo informado quedan en `sinCosto` para
+ * estimarlos con los precios del catálogo. `sinUso`: rondas que no informaron nada.
+ */
+export type Uso = {
+  llamadas: number; tokensEntrada: number; tokensSalida: number; costoUsd: number;
+  sinCosto: { entrada: number; salida: number }; sinUso: number;
+};
+export const usoVacio = (): Uso => ({ llamadas: 0, tokensEntrada: 0, tokensSalida: 0, costoUsd: 0, sinCosto: { entrada: 0, salida: 0 }, sinUso: 0 });
+
+const entero = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v) : null);
+
+/** Suma el `usage` de una respuesta de OpenRouter (chat completions). Tolera que falte o venga incompleto. */
+export function sumarUso(uso: Uso, usage: unknown) {
+  uso.llamadas++;
+  const u = usage && typeof usage === "object" ? (usage as Record<string, unknown>) : null;
+  const entrada = entero(u?.prompt_tokens), salida = entero(u?.completion_tokens);
+  const costo = typeof u?.cost === "number" && Number.isFinite(u.cost) && u.cost >= 0 ? u.cost : null;
+  if (entrada === null && salida === null && costo === null) {
+    uso.sinUso++;
+    return;
+  }
+  uso.tokensEntrada += entrada ?? 0;
+  uso.tokensSalida += salida ?? 0;
+  if (costo !== null) uso.costoUsd += costo;
+  else {
+    uso.sinCosto.entrada += entrada ?? 0;
+    uso.sinCosto.salida += salida ?? 0;
+  }
+}
+
+
+// Tope de gasto y lista de permitidos: qué modelo responde una pregunta (G9) ----------------------------------------
+
+export type MotivoAutomatico = "tope_gasto" | "modelo_no_permitido";
+export type Decision = { modelo: ConfigModelo | null; motivo: MotivoAutomatico | null; aviso: string | null };
+
+/**
+ * Con IA configurada, decide si esta pregunta la redacta el modelo o el análisis automático: un modelo fuera de la
+ * lista de permitidos o un gasto del mes que ya llegó al tope pasan a modo determinista, con un aviso claro.
+ * Pura: el gasto y el tope los lee quien llama.
+ */
+export function decidirModelo(
+  cfg: ConfigModelo | null,
+  { permitidos = null, topeUsd = null, gastoUsd = null }: { permitidos?: string[] | null; topeUsd?: number | null; gastoUsd?: number | null },
+): Decision {
+  if (!cfg) return { modelo: null, motivo: null, aviso: null };
+  if (!modeloPermitido(cfg.modelo, permitidos)) {
+    return {
+      modelo: null, motivo: "modelo_no_permitido",
+      aviso: `El modelo configurado (${cfg.modelo}) no está en la lista de modelos permitidos del servidor; se muestra el análisis automático por reglas.`,
+    };
+  }
+  if (topeUsd !== null && gastoUsd !== null && gastoUsd >= topeUsd) {
+    return {
+      modelo: null, motivo: "tope_gasto",
+      aviso: `Se llegó al tope de gasto de IA del mes (${usd(topeUsd)}): hasta el próximo mes, o hasta que un admin lo suba, responde el análisis automático por reglas. Las cifras son las mismas.`,
+    };
+  }
+  return { modelo: cfg, motivo: null, aviso: null };
 }
 
 type Mensaje =
@@ -52,7 +136,8 @@ const BUSCAR_DOCUMENTOS = {
 };
 const MAX_CITAS_POR_BUSQUEDA = 5;
 
-export async function preguntarAlModelo(pregunta: string, historial: Turno[], ctx: Contexto, cfg: ConfigModelo): Promise<SalidaModelo> {
+/** `uso` acumula tokens y costo de todas las rondas, también si la pregunta termina en error. */
+export async function preguntarAlModelo(pregunta: string, historial: Turno[], ctx: Contexto, cfg: ConfigModelo, uso: Uso = usoVacio()): Promise<SalidaModelo> {
   const mensajes: Mensaje[] = [
     { role: "system", content: sistema(ctx) },
     ...historial.slice(-6).map((t): Mensaje => (t.rol === "usuario" ? { role: "user", content: t.texto } : { role: "assistant", content: t.texto })),
@@ -66,11 +151,13 @@ export async function preguntarAlModelo(pregunta: string, historial: Turno[], ct
     const res = await (cfg.fetch ?? fetch)(cfg.url ?? "https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${cfg.apiKey}`, "Content-Type": "application/json", "X-Title": "BIA Foresight" },
-      body: JSON.stringify({ model: cfg.modelo, messages: mensajes, tools: herramientas, tool_choice: "auto", temperature: 0.2 }),
+      // usage.include: OpenRouter ya devuelve el uso siempre (el parámetro quedó obsoleto); se manda por compatibilidad.
+      body: JSON.stringify({ model: cfg.modelo, messages: mensajes, tools: herramientas, tool_choice: "auto", temperature: 0.2, usage: { include: true } }),
       signal: AbortSignal.timeout(60_000),
     });
     if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    const json = (await res.json()) as { choices?: { message: { content: string | null; tool_calls?: LlamadaModelo[] } }[] };
+    const json = (await res.json()) as { choices?: { message: { content: string | null; tool_calls?: LlamadaModelo[] } }[]; usage?: unknown };
+    sumarUso(uso, json.usage);
     const msg = json.choices?.[0]?.message;
     if (!msg) throw new Error("OpenRouter: respuesta sin mensaje");
 
@@ -156,6 +243,7 @@ export function sistema({ version, estado, documentos, reglas = [], memoria }: C
     "Reglas:",
     "1. Toda cifra sale de las herramientas. No calcules, no sumes, no redondees distinto ni estimes: copia las cifras exactamente como vienen en los resultados (p. ej. \"−L 8.4 M\", \"−6.9%\"). Si una cifra no está en los resultados, no la escribas.",
     "2. Para explicar una variación, empieza por kpi_periodo y luego abre por las dimensiones que hagan falta (variacion_por_dimension, top_rutas) y descomposicion para separar frecuencia de ticket.",
+    "2b. Si preguntan si la variación fue por precio, por volumen o por mezcla, usa puente_precio_volumen_mezcla; para «en lo que va del año», «acumulado» o «YTD», usa acumulado_anio (enero al mes indicado contra el mismo tramo del año anterior); para rutas que se salen de lo normal, usa rutas_atipicas (siempre contra el mes anterior).",
     "3. Los hechos los muestra el sistema a partir de las consultas; tú das la lectura. Las hipótesis son posibles causas que los datos de venta no prueban: escríbelas sin cifras.",
     "4. Fuera de alcance (no inventes nada): participación de mercado, Nielsen, competencia, pronósticos, visitas, pedidos (solo hay facturas), presupuesto, márgenes, inventario y datos de clientes individuales.",
     ...(documentos ? [

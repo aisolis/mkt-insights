@@ -4,8 +4,9 @@
  * la que se prueba el banco de preguntas.
  */
 import { lempirasCompacto, periodoLargo } from "@/lib/format";
+import { efectoPrincipal, pasosPuente } from "@/lib/dashboard/analisis";
 import { periodoComparado } from "@/lib/dashboard/params";
-import type { Descomposicion, Dimension, Kpi, Periodo, VariacionFila } from "@/lib/semantic/contracts";
+import type { Descomposicion, Dimension, Kpi, Periodo, Puente, RutasAtipicas, VariacionFila } from "@/lib/semantic/contracts";
 import { lempirasSigno, normalizar, participacion, pctTexto, periodoTxt } from "./texto";
 import type { Contexto, Resultado } from "./tipos";
 
@@ -13,7 +14,8 @@ const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "
 
 export type FiltrosPregunta = { canal?: string; ruta?: string; marca?: string; producto?: string; empresa?: string };
 export type Plan = {
-  tipo: "diagnostico" | "dimension" | "kpi" | "serie";
+  /** G9: "puente" = precio, volumen y mezcla; "acumulado" = en lo que va del año; "atipicas" = rutas fuera de lo normal. */
+  tipo: "diagnostico" | "dimension" | "kpi" | "serie" | "puente" | "acumulado" | "atipicas";
   periodo: Periodo;
   comparado: Periodo;
   filtros: FiltrosPregunta;
@@ -86,22 +88,44 @@ export function interpretar(pregunta: string, ctx: Contexto): Plan {
   const descomponer = /\b(facturas?|ticket|frecuencia|clientes?)\b/.test(t);
   const causal = /\b(donde|por que|porque|concentr\w*|explic\w*|contribu\w*|caida|cayo|cae|baj\w*|crec\w*|subi\w*|sube|aument\w*|disminu\w*|variacion|paso|fall\w*|mejor\w*|peor\w*)\b/.test(t);
 
+  // G9: acumulado del año, rutas fuera de lo normal y precio–volumen–mezcla van antes que las demás lecturas.
+  const acumulado = /\b(en lo que va del? ano|lo que va del? ano|acumulad[oa]s?|ytd|year to date|(en el |del )?ano a la fecha|de enero a la fecha)\b/.test(t);
+  const atipicas = /\b(fuera de lo (normal|comun|habitual)|atipic\w*|anomal\w*|anormal\w*|inusual\w*|se salieron de lo normal)\b/.test(t);
+  const puente = /\b(mezcla|mix|pvm|efecto (de )?(precio|volumen|mezcla)|(precio|volumen) (y|o|vs\.?|versus|contra) (precio|volumen))\b/.test(t)
+    || (causal && /\bprecios?\b/.test(t));
+
   let tipo: Plan["tipo"];
-  if (/\b(tendencia|evolucion|mes a mes|serie|historic\w*|mensual|por mes|en el ano|durante el ano|ultimos meses)\b/.test(t) && !causal) tipo = "serie";
+  if (acumulado) tipo = "acumulado";
+  else if (atipicas) tipo = "atipicas";
+  else if (puente) tipo = "puente";
+  else if (/\b(tendencia|evolucion|mes a mes|serie|historic\w*|mensual|por mes|en el ano|durante el ano|ultimos meses)\b/.test(t) && !causal) tipo = "serie";
   else if (dimensiones.length) tipo = "dimension";
   else if (!causal && /\b(cuant[oa]s?|cual (fue|es)|total|resumen|kpi|indicadores)\b/.test(t)) tipo = "kpi";
   else tipo = "diagnostico";
 
   // Una pregunta de serie que nombra un año usa ese año.
   const periodoSerie = tipo === "serie" && anioSuelto && !nombrados.length ? { anio: +anioSuelto[1], mes: 12 } : periodo;
-  return { tipo, periodo: periodoSerie, comparado, filtros: limpiar(filtros), dimensiones, descomponer };
+  // Un acumulado que nombra solo el año ("acumulado 2025") llega hasta el último mes con datos de ese año.
+  const ultimoDelAnio = anioSuelto && meta.periodos.findLast((p) => p.anio === +anioSuelto[1]);
+  const periodoAcumulado = tipo === "acumulado" && ultimoDelAnio && !nombrados.length ? { anio: ultimoDelAnio.anio, mes: ultimoDelAnio.mes } : periodoSerie;
+  return { tipo, periodo: periodoAcumulado, comparado, filtros: limpiar(filtros), dimensiones, descomponer };
 }
 
 /** Ejecuta el plan con el catálogo de herramientas. Devuelve llamadas en orden: la primera es siempre la principal. */
 export function llamadas(plan: Plan): { herramienta: string; args: Record<string, unknown> }[] {
   const base = { periodo: periodoTxt(plan.periodo), comparado: periodoTxt(plan.comparado), filtros: plan.filtros };
   if (plan.tipo === "serie") return [{ herramienta: "serie_mensual", args: { anio: plan.periodo.anio, filtros: plan.filtros } }];
+  if (plan.tipo === "acumulado") return [{ herramienta: "acumulado_anio", args: { periodo: base.periodo, filtros: plan.filtros } }];
+  if (plan.tipo === "atipicas") return [{ herramienta: "rutas_atipicas", args: { periodo: base.periodo, filtros: plan.filtros, limite: 10 } }];
   const out = [{ herramienta: "kpi_periodo", args: base }];
+  if (plan.tipo === "puente") {
+    out.push({ herramienta: "puente_precio_volumen_mezcla", args: base });
+    for (const d of plan.dimensiones) {
+      if (d === "ruta") out.push({ herramienta: "top_rutas", args: { ...base, limite: 10 } as never });
+      else if (!(d === "canal" && plan.filtros.canal) && !(d === "marca" && plan.filtros.marca)) out.push({ herramienta: "variacion_por_dimension", args: { ...base, dimension: d } as never });
+    }
+    return out;
+  }
   const dims: Dimension[] = plan.tipo === "diagnostico" ? ["canal", "ruta", "marca"] : plan.tipo === "dimension" ? plan.dimensiones : [];
   for (const d of dims) {
     if (d === "ruta") out.push({ herramienta: "top_rutas", args: { ...base, limite: 10 } as never });
@@ -141,6 +165,22 @@ export function redactar(resultados: Resultado[], plan: Plan): string {
   if (partes.length) frases.push(`${sentido < 0 ? "La caída" : "El aumento"} se concentra ${partes.join("; ")}.`);
   const desc = resultados.find((r) => r.herramienta === "descomposicion");
   if (desc) frases.push(desc.hechos[0]);
+  // G9
+  const pvm = resultados.find((r) => r.herramienta === "puente_precio_volumen_mezcla");
+  if (pvm) {
+    const p = pvm.datos as Puente;
+    const pasos = pasosPuente(p, pvm.periodo!, pvm.comparado!);
+    const principal = pasos.find((x) => x.clave === efectoPrincipal(p))!;
+    frases.push(`Por precio, volumen y mezcla: ${pasos.map((x) => `${x.nombre.toLowerCase()} ${lempirasSigno(x.valor)}`).join(", ")}; lo que más pesa es ${principal.nombre.toLowerCase()} (${lempirasSigno(principal.valor)}).`);
+    if (pvm.hechos[2]) frases.push(pvm.hechos[2]);
+  }
+  const acu = resultados.find((r) => r.herramienta === "acumulado_anio");
+  if (acu) frases.push(...acu.hechos.slice(0, 2));
+  const atip = resultados.find((r) => r.herramienta === "rutas_atipicas");
+  if (atip) {
+    frases.push(atip.hechos[0]);
+    if ((atip.datos as RutasAtipicas).rutas.length) frases.push(`La que más se aleja es ${atip.hechos[1]}`);
+  }
   const serie = resultados.find((r) => r.herramienta === "serie_mensual");
   if (serie) frases.push(...serie.hechos);
   if (!frases.length) frases.push(`No encontré datos para ${periodoLargo(plan.periodo)} con esos filtros.`);
@@ -151,8 +191,8 @@ export function redactar(resultados: Resultado[], plan: Plan): string {
 export function hipotesis(resultados: Resultado[], plan: Plan): string[] {
   const kpi = resultados.find((r) => r.herramienta === "kpi_periodo")?.datos as Kpi | undefined;
   const desc = resultados.find((r) => r.herramienta === "descomposicion")?.datos as Descomposicion | undefined;
-  if (!kpi) return [];
-  const out: string[] = [];
+  const out: string[] = hipotesisAnalisis(resultados);
+  if (!kpi) return out;
   const cae = kpi.venta_neta < kpi.venta_neta_cmp;
   const rel = (a: number | null, b: number | null) => (a === null || b === null || b === 0 ? 0 : a / b - 1);
   if (desc) {
@@ -171,6 +211,23 @@ export function hipotesis(resultados: Resultado[], plan: Plan): string[] {
   }
   if (plan.comparado.anio === plan.periodo.anio && plan.comparado.mes === plan.periodo.mes - 1)
     out.push("Estacionalidad: compararlo con el mismo mes del año anterior antes de atribuirlo a la operación.");
+  return out;
+}
+
+/** G9: posibles causas según el puente y las rutas fuera de lo normal. Sin cifras. */
+function hipotesisAnalisis(resultados: Resultado[]): string[] {
+  const out: string[] = [];
+  const p = resultados.find((r) => r.herramienta === "puente_precio_volumen_mezcla")?.datos as Puente | undefined;
+  if (p && p.variacion !== 0) {
+    const principal = efectoPrincipal(p);
+    const pesa = (v: number) => Math.abs(v) > Math.abs(p.variacion) / 4;
+    if (principal === "volumen" && p.volumen < 0) out.push("La caída es sobre todo de kilos: revisar abastecimiento en ruta, cobertura de clientes o compras adelantadas en el mes anterior.");
+    if (p.precio < 0 && (principal === "precio" || pesa(p.precio))) out.push("Precio por kg a la baja: revisar descuentos, promociones o cambios en la lista de precios del periodo.");
+    if (p.mezcla < 0 && (principal === "mezcla" || pesa(p.mezcla))) out.push("La mezcla se movió hacia productos de menor precio por kg: revisar presentaciones económicas o falta de productos de mayor valor.");
+    if (p.descontinuados < 0 && pesa(p.descontinuados)) out.push("Productos que dejaron de venderse: confirmar si fue una salida planeada, un cambio de código o falta de producto.");
+  }
+  const atip = resultados.find((r) => r.herramienta === "rutas_atipicas")?.datos as RutasAtipicas | undefined;
+  if (atip?.rutas.length) out.push("Una ruta fuera de lo normal puede deberse a un pedido grande puntual, un cambio de vendedor o de territorio, o a un cambio de canal: validarlo con el supervisor antes de concluir.");
   return out;
 }
 

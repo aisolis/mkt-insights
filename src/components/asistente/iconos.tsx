@@ -41,3 +41,15 @@ export const IconoCaja = ({ className = "size-4" }: P) => (
 export const IconoMapa = ({ className = "size-4" }: P) => (
   <svg {...base} className={className}><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z" /><path d="M9 4v14M15 6v14" /></svg>
 );
+export const PulgarArriba = ({ className = "size-4" }: P) => (
+  <svg {...base} className={className}><path d="M7 10v11H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z" /><path d="M7 10l4-7a2.5 2.5 0 0 1 2.5 2.8L13 9h5.6a2 2 0 0 1 2 2.4l-1.5 7.6a2 2 0 0 1-2 1.6H7" /></svg>
+);
+export const PulgarAbajo = ({ className = "size-4" }: P) => (
+  <svg {...base} className={className}><path d="M17 14V3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1z" /><path d="M17 14l-4 7a2.5 2.5 0 0 1-2.5-2.8L11 15H5.4a2 2 0 0 1-2-2.4l1.5-7.6a2 2 0 0 1 2-1.6H17" /></svg>
+);
+export const IconoInforme = ({ className = "size-4" }: P) => (
+  <svg {...base} className={className}><path d="M6 3h9l4 4v14H6z" /><path d="M15 3v4h4M9 12h7M9 16h5" /></svg>
+);
+export const IconoCheck = ({ className = "size-4" }: P) => (
+  <svg {...base} className={className}><path d="M5 12l5 5 9-10" /></svg>
+);

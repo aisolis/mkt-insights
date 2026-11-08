@@ -5,9 +5,13 @@ import { useEffect, useState } from "react";
 import { salir } from "@/app/(auth)/acciones";
 import { NIVEL_TXT, type Usuario } from "@/lib/auth/reglas";
 
-const NAV = [
+type ItemNav = { href: string; label: string; soloAdmin?: boolean; soloPlus?: boolean };
+const NAV: ItemNav[] = [
   { href: "/", label: "Inicio" },
+  { href: "/resumen", label: "Resumen del mes" },
+  { href: "/clientes", label: "Clientes", soloPlus: true },
   { href: "/asistente", label: "Asistente de IA" },
+  { href: "/informe", label: "Mi informe" },
   { href: "/cargas", label: "Cargas y versiones" },
   { href: "/conocimiento", label: "Conocimiento" },
   { href: "/asistente/configuracion", label: "Configuración del asistente", soloAdmin: true },
@@ -38,7 +42,7 @@ export function AppShell({ children, version, usuario }: { children: React.React
         <div className="text-xs text-neutral-500">Piloto · Marketing y Ventas</div>
       </div>
       <nav className="space-y-1">
-        {NAV.filter((n) => !n.soloAdmin || usuario.esAdmin).map((n) => (
+        {NAV.filter((n) => (!n.soloAdmin || usuario.esAdmin) && (!n.soloPlus || usuario.nivel === "plus")).map((n) => (
           <Link
             key={n.href}
             href={n.href}

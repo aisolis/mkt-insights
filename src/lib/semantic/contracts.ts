@@ -89,3 +89,56 @@ const LadoDescomposicion = z.object({
 /** Clientes, facturas y ticket de ambos periodos (ventas.descomposicion, S4 y S14). */
 export const Descomposicion = z.object({ actual: LadoDescomposicion, anterior: LadoDescomposicion });
 export type Descomposicion = z.infer<typeof Descomposicion>;
+
+// G9 — Análisis comercial (supabase/migrations/0014_analisis.sql) ------------------------------------------------
+
+/** Puente precio–volumen–mezcla entre dos meses (S23). `limite`: productos por lista de detalle. */
+export const PuenteRequest = KpiRequest.extend({ limite: z.number().int().min(1).max(50).default(5) });
+export const ProductoPuente = z.object({
+  art_codigo: z.string(), descripcion: z.string(), kg: z.number(), kg_cmp: z.number(), venta_neta: z.number(), venta_neta_cmp: z.number(),
+  precio_kg: z.number(), precio_kg_cmp: z.number(), efecto_volumen: z.number(), efecto_precio: z.number(), efecto_mezcla: z.number(),
+});
+export type ProductoPuente = z.infer<typeof ProductoPuente>;
+const ProductoCambio = z.object({ art_codigo: z.string(), descripcion: z.string(), variacion: z.number() });
+/**
+ * volumen + precio + mezcla + nuevos + descontinuados + sin_volumen = variacion, al centavo. Volumen, precio y mezcla
+ * se calculan sobre los productos con kg en ambos meses; los demás van con su variación completa en su renglón.
+ */
+export const Puente = z.object({
+  venta_neta: z.number(), venta_neta_cmp: z.number(), variacion: z.number(),
+  volumen: z.number(), precio: z.number(), mezcla: z.number(), nuevos: z.number(), descontinuados: z.number(), sin_volumen: z.number(),
+  kg_comparables: z.number(), kg_comparables_cmp: z.number(),
+  precio_kg_comparables: z.number().nullable(), precio_kg_comparables_cmp: z.number().nullable(),
+  productos_comparables: z.number(), productos_nuevos: z.number(), productos_descontinuados: z.number(), productos_sin_volumen: z.number(),
+  detalle_precio: z.array(ProductoPuente), detalle_mezcla: z.array(ProductoPuente),
+  principales_nuevos: z.array(ProductoCambio), principales_descontinuados: z.array(ProductoCambio),
+});
+export type Puente = z.infer<typeof Puente>;
+
+/** Acumulado del año: enero..mes de `periodo` contra el mismo tramo del año anterior (S24). */
+export const AcumuladoRequest = z.object({ version: z.number().int(), periodo: Periodo, filtros: Filtros });
+export const Acumulado = z.object({
+  anio: z.number().int(), mes: z.number().int(),
+  venta_neta: z.number(), kg: z.number(), precio_kg: z.number().nullable(), clientes_con_compra: z.number(),
+  venta_neta_cmp: z.number(), kg_cmp: z.number(), precio_kg_cmp: z.number().nullable(), clientes_con_compra_cmp: z.number(),
+  /** Meses con datos en la versión dentro de cada tramo. */
+  meses: z.array(z.number().int()), meses_cmp: z.array(z.number().int()),
+});
+export type Acumulado = z.infer<typeof Acumulado>;
+
+/** Rutas cuya variación del mes contra el mes anterior se sale de su historia de 12 meses (S25). */
+export const AtipicasRequest = z.object({ version: z.number().int(), periodo: Periodo, filtros: Filtros, limite: z.number().int().min(1).max(50).default(10) });
+export const RutaAtipica = z.object({
+  ruta: z.string(), canal: z.string(), actual: z.number(), anterior: z.number(), variacion: z.number(),
+  /** Cambios como fracción: 0.25 = +25 %. */
+  cambio: z.number(), mediana: z.number(), escala: z.number(), minimo: z.number(), maximo: z.number(),
+  puntaje: z.number(), meses_historia: z.number().int(), promedio_mensual: z.number(),
+});
+export type RutaAtipica = z.infer<typeof RutaAtipica>;
+export const RutasAtipicas = z.object({
+  hay_periodo: z.boolean(), hay_anterior: z.boolean(),
+  rutas_evaluadas: z.number(), rutas_pequenas: z.number(), rutas_sin_historia: z.number(), rutas_fuera: z.number(),
+  umbral_promedio: z.number(),
+  rutas: z.array(RutaAtipica),
+});
+export type RutasAtipicas = z.infer<typeof RutasAtipicas>;

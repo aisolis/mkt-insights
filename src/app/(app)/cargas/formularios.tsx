@@ -116,6 +116,10 @@ export function FormPublicar({ id, mesCompletoSugerido, ultimoMes, hayRevisar, b
           <span>Revisé las alertas y las cifras son correctas.</span>
         </label>
       )}
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" name="correo" className="mt-1" />
+        <span>Enviar el resumen por correo al equipo (personas con acceso activo). Va el resumen del último mes cerrado de la versión nueva.</span>
+      </label>
       <div className="flex items-center gap-3">
         <Button type="submit" size="lg" disabled={enviando || bloqueada}>{enviando ? "Publicando…" : "Publicar versión"}</Button>
         <Aviso paso={estado} />

@@ -19,6 +19,8 @@ const consultas = crearConsultas(rpc);
 /** Una consulta por request (layout + página). */
 export const versionVigente = cache(consultas.versionVigente);
 export const { kpiPeriodo, variacionPorDimension, topContribuyentes, serieMensual, descomposicion } = consultas;
+/** G9: análisis comercial (0014_analisis.sql). */
+export const { puentePrecioVolumenMezcla, acumuladoAnio, rutasAtipicas } = consultas;
 
 export type FilaBitacora = {
   usuario_id: string; version: number | null; contexto: string; pregunta: string; estado: "ok" | "fuera_de_alcance" | "sin_datos" | "error";

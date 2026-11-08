@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { requerirAcceso } from "@/lib/auth/acceso";
@@ -29,14 +30,24 @@ function meses(m: { anio: number; mes: number }[] | null) {
   return seguidos ? `${periodoCorto(m[0])} – ${periodoCorto(m.at(-1)!)} (${m.length} meses)` : m.map(periodoCorto).join(", ");
 }
 
-export default async function Cargas() {
+/** Aviso tras publicar (?publicada=N&correo=…): la tarjeta de la carga ya no está para mostrarlo. */
+const CORREO: Record<string, string> = {
+  enviado: "El resumen se envió por correo al equipo.",
+  desarrollo: "En desarrollo no se envían correos: lo que se habría enviado quedó en el log del servidor.",
+  error: "No se pudo enviar el resumen por correo. Compártelo desde la página del resumen (Imprimir o guardar PDF).",
+};
+
+export default async function Cargas(props: PageProps<"/cargas">) {
   const usuario = await requerirAcceso();
+  const sp = await props.searchParams;
   const gestor = gestionaCargas(usuario);
   const historial = await versiones();
   const cargas = gestor ? (await listarCargas()).filter((c) => !["publicada", "retirada"].includes(c.estado)) : [];
   const validadas = cargas.filter((c) => c.estado === "validada").map((c) => c.id);
   const [alertas, mesesCarga] = validadas.length ? await Promise.all([alertasDe(validadas), mesesDeCargas(validadas)]) : [new Map<string, Alerta[]>(), new Map<string, Mes[]>()];
   const vigente = historial.find((v) => !v.retirada_en);
+  const publicada = gestor ? historial.find((v) => String(v.version) === sp.publicada) : undefined;
+  const correo = typeof sp.correo === "string" ? CORREO[sp.correo] : undefined;
 
   return (
     <div className="space-y-6">
@@ -48,6 +59,17 @@ export default async function Cargas() {
         </p>
       </div>
 
+      {publicada && (
+        <section role="status" className="space-y-1 border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950">
+          <p className="font-semibold">Publicaste la versión v{publicada.version}. El dashboard y el asistente ya la muestran.</p>
+          {correo && <p>{correo}</p>}
+          <p>
+            <Link href={`/resumen?version=${publicada.version}`} className="font-medium underline">Ver el resumen ejecutivo del mes</Link>
+            {" · "}Después, concilia con BI (paso 5 de la guía).
+          </p>
+        </section>
+      )}
+
       {gestor && (
         <section className="space-y-3 border border-neutral-200 bg-white p-4">
           <h2 className="text-sm font-semibold">Carga del mes</h2>
@@ -57,6 +79,9 @@ export default async function Cargas() {
             <li>Publica. Si algo salió mal, retira la versión y vuelve a regir la anterior.</li>
           </ol>
           <FormCargar />
+          <p className="text-xs text-neutral-500">
+            ¿Un canal nuevo o escrito distinto? <Link href="/cargas/homologacion" className="underline">Homologación de canales</Link>
+          </p>
         </section>
       )}
 
@@ -114,6 +139,7 @@ function FilaVersion({ v, vigente, gestor, retirable }: { v: Version; vigente: b
       </TableCell>
       <TableCell className="max-w-72 align-top text-xs whitespace-normal">
         {v.conciliada_bi ? <><Badge variant="secondary">Conciliada</Badge><div className="mt-1 text-neutral-600">{v.conciliada_nota}</div></> : "Sin conciliar"}
+        <div className="mt-1"><Link href={`/resumen?version=${v.version}`} className="text-neutral-700 underline">Resumen del mes</Link></div>
       </TableCell>
       {gestor && (
         <TableCell className="align-top">
@@ -166,6 +192,11 @@ function TarjetaCarga({ c, alertas, meses: m }: { c: FilaCarga; alertas: Alerta[
               </li>
             ))}
           </ul>
+          {m.some((x) => x.canales_sin_homologar.length > 0) && (
+            <p className="text-xs text-neutral-600">
+              Si BIA ya decidió a qué canal van, agrégalos en <Link href="/cargas/homologacion" className="underline">Homologación de canales</Link>: esta carga se actualiza al momento.
+            </p>
+          )}
           {ultimo && (
             <FormPublicar id={c.id} ultimoMes={periodoLargo(ultimo)} mesCompletoSugerido={!esParcial(ultimo)}
               hayRevisar={alertas.some((a) => a.nivel === "revisar")} bloqueada={alertas.some((a) => a.nivel === "bloqueo")} />

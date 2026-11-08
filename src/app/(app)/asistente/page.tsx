@@ -2,7 +2,7 @@ import { Chat, type ConversacionInicial, type Sugerencia } from "@/components/as
 import { leerParams, periodoComparado, queryString } from "@/lib/dashboard/params";
 import { describirFiltros, rango } from "@/lib/asistente/texto";
 import { capital } from "@/lib/format";
-import { modeloActivo } from "@/lib/asistente/config-servidor";
+import { modeloParaPregunta } from "@/lib/asistente/config-servidor";
 import { cargarTurnos, contextoEnPalabras, listarConversaciones, obtenerConversacion } from "@/lib/asistente/conversaciones";
 import { versionVigente } from "@/lib/semantic/queries";
 import type { VersionVigente } from "@/lib/semantic/contracts";
@@ -13,6 +13,9 @@ const SOBRE: Record<string, (anio: number) => string> = {
   serie: (anio) => `¿Cómo viene la venta neta mes a mes en ${anio}?`,
   canal: () => "¿Dónde se concentra la variación por canal?",
   rutas: () => "¿Qué rutas explican la variación?",
+  acumulado: (anio) => `¿Cómo vamos en lo que va del año ${anio}?`,
+  precio: () => "¿La variación fue por precio, volumen o mezcla?",
+  atipicas: () => "¿Qué rutas se salieron de lo normal este mes?",
 };
 
 const SUGERENCIAS: Sugerencia[] = [
@@ -57,7 +60,8 @@ export default async function Asistente(props: PageProps<"/asistente">) {
       contextoTxt={`${capital(rango(estado.periodo, cmp))} · ${describirFiltros(estado.filtros, version.metadatos)}`}
       version={version.version}
       inicial={sobre}
-      conModelo={(await modeloActivo()) !== null}
+      // Con el tope de gasto alcanzado o un modelo no permitido responde el análisis automático (G9).
+      conModelo={(await modeloParaPregunta()).modelo !== null}
       sugerencias={SUGERENCIAS}
       conversaciones={conversaciones}
       abierta={abierta}

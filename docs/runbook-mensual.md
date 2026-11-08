@@ -39,20 +39,55 @@ Cuando la carga queda **Lista para publicar**, la plataforma la compara con lo q
   - un mes ya publicado cambia más de 1 %;
   - un mes nuevo sube o baja más de 30 % contra el anterior;
   - faltan meses entre lo publicado y el archivo;
-  - aparecen canales que no están en la homologación;
+  - aparecen canales que no están en la homologación (ver paso 3b);
+  - un canal sube o baja de golpe (ver abajo);
   - hay muchas filas repetidas.
 - **Info:** no requiere acción. Por ejemplo, si el último mes está completo o es parcial.
 
+**Alertas por canal.** Además de los totales del mes, la plataforma compara cada canal BIA:
+
+| Caso | Contra qué | Alerta «Revisar» si el canal cambia más de |
+|---|---|---|
+| El mes ya estaba publicado (lo reemplaza) | Lo publicado para ese mes | 5 % |
+| El mes es nuevo | Promedio de los 3 meses anteriores publicados | 25 % |
+
+Se ignoran los canales chicos (menos de 3 % de la venta neta del mes, en el archivo y en la referencia). No se compara un mes nuevo parcial, ni un mes que reemplaza a otro con distintos días (eso ya lo dicen las alertas del mes). Del promedio salen los meses publicados como parciales. Ejemplo: «Octubre 2026: Detalle baja 38 % frente al promedio de los 3 meses anteriores (L 1.2 M contra L 1.9 M)». También avisa si un canal con peso desaparece o aparece.
+
 Si una alerta no tiene explicación, no publiques: descarta la carga y revisa la exportación.
+
+## 3b. Homologar canales nuevos (solo si BIA ya decidió)
+
+Si aparece «canales sin homologar», el canal viene escrito distinto en el cubo («MAYOREO NORTE», «B2C»…). En **Cargas y versiones → Homologación de canales**:
+
+1. La tabla «Canales sin homologar» muestra cada canal de origen con sus filas y su venta neta por carga y mes.
+2. Si BIA ya dijo a qué canal BIA va, pulsa **Homologar**, elige el canal BIA y guarda. Un canal BIA nuevo hay que confirmarlo aparte.
+3. La carga que está lista para publicar se actualiza al momento: vuelve a **Cargas y versiones** y revisa otra vez sus alertas.
+
+Si BIA todavía no decidió (hoy pasa con SEMI-MAYOREO y PENDIENTE), **no lo homologues**: se publica con su nombre de origen y la alerta lo recuerda.
+
+Los meses ya publicados **no cambian** al editar la homologación: siguen con el canal con que se publicaron. Para corregirlos, vuelve a subir el Excel de esos meses y publícalo; queda como una versión nueva. Cada cambio queda en el historial de la página (quién, cuándo, antes y después, y qué cargas se actualizaron).
 
 ## 4. Publicar
 
 1. Escribe una nota corta (qué trae, quién exportó, algo que el equipo deba saber).
 2. Marca si el último mes está **completo**. Si lo dejas sin marcar, el dashboard lo muestra como parcial y las comparaciones lo advierten.
 3. Si hubo alertas de tipo «Revisar», confirma que las revisaste.
-4. Pulsa **Publicar versión**. Tarda unos segundos.
+4. Si quieres avisar al equipo, marca **Enviar el resumen por correo al equipo**. Llega a todas las personas con acceso activo, una por una, con el resumen del último mes cerrado y el enlace. Solo se envía desde la plataforma en producción; en desarrollo no se envían correos.
+5. Pulsa **Publicar versión**. Tarda unos segundos.
 
 Desde ese momento, el dashboard y el asistente muestran la versión nueva. La cabecera indica el número de versión y la fecha de corte.
+
+## 4b. Resumen ejecutivo del mes
+
+Al publicar, la página muestra el enlace **Ver el resumen ejecutivo del mes**. También está en cada versión de la tabla (enlace «Resumen del mes») y en `/resumen`, para cualquiera con acceso.
+
+- Muestra venta neta, volumen, precio por kg y clientes con compra del último mes cerrado, contra el mes anterior y contra el mismo mes del año anterior.
+- Lista los canales, rutas y marcas que más explican la variación.
+- Avisa si el mes es parcial, si la versión no está conciliada con BI o si fue retirada.
+- Se puede elegir otra versión u otro mes arriba.
+- **Imprimir o guardar PDF** deja una hoja limpia, sin el menú, para mandarla o llevarla a una reunión.
+
+Si la versión todavía no está conciliada con BI, el resumen lo dice. Concilia (paso 5) antes de circular cifras.
 
 ## 5. Conciliar con BI
 

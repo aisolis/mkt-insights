@@ -110,7 +110,10 @@ describe("herramientas", () => {
 
   it("se publican al modelo como funciones con JSON Schema", () => {
     const defs = herramientasModelo();
-    expect(defs.map((d) => d.function.name)).toEqual(["kpi_periodo", "variacion_por_dimension", "top_rutas", "serie_mensual", "descomposicion"]);
+    expect(defs.map((d) => d.function.name)).toEqual([
+      "kpi_periodo", "variacion_por_dimension", "top_rutas", "serie_mensual", "descomposicion",
+      "puente_precio_volumen_mezcla", "acumulado_anio", "rutas_atipicas", // G9
+    ]);
     expect(defs[1].function.parameters).toMatchObject({ type: "object", required: ["dimension", "periodo", "comparado"] });
   });
 });

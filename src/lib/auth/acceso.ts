@@ -39,6 +39,24 @@ export async function requerirGestorCargas(): Promise<Usuario> {
   return usuario;
 }
 
+/**
+ * Detalle por cliente (G9, S12, S16): solo Plus; el resto vuelve al inicio. La base lo exige igual
+ * (interno.exigir_acceso('plus')): esto solo evita mostrar una pantalla que fallaría.
+ */
+export async function requerirPlus(): Promise<Usuario> {
+  const usuario = await requerirAcceso();
+  if (usuario.nivel !== "plus") redirect("/");
+  return usuario;
+}
+
+/** Route handlers con detalle por cliente: como accesoApi, más 403 si el perfil no es Plus. */
+export async function accesoApiPlus(): Promise<Usuario | Response> {
+  const usuario = await accesoApi();
+  if (usuario instanceof Response) return usuario;
+  if (usuario.nivel !== "plus") return Response.json({ error: "El detalle por cliente es solo para perfiles Plus" }, { status: 403 });
+  return usuario;
+}
+
 /** Para route handlers: el usuario o la respuesta 401/403 lista para devolver. */
 export async function accesoApi(): Promise<Usuario | Response> {
   const acceso = await obtenerAcceso();

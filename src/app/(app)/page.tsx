@@ -1,13 +1,18 @@
 import Link from "next/link";
+import { AcumuladoKpis, PuenteProductos, RutasAtipicasTabla } from "@/components/dashboard/analisis";
 import { CanalChart } from "@/components/dashboard/canal-chart";
 import { Filtros } from "@/components/dashboard/filtros";
+import { PuenteChart } from "@/components/dashboard/puente-chart";
 import { SerieChart, type PuntoSerie } from "@/components/dashboard/serie-chart";
 import { KpiCard } from "@/components/kpi-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { advertenciasAcumulado, mesAnterior, pasosPuente, rangoAcumulado } from "@/lib/dashboard/analisis";
 import { advertencias, leerParams, periodoComparado, queryString } from "@/lib/dashboard/params";
 import { capital, conteo, fechaCorta, lempirasCompacto, periodoCorto, periodoLargo, precioKg, toneladas } from "@/lib/format";
 import { variacionPct, type Filtros as FiltrosT, type Kpi, type VersionVigente } from "@/lib/semantic/contracts";
-import { kpiPeriodo, serieMensual, topContribuyentes, variacionPorDimension, versionVigente } from "@/lib/semantic/queries";
+import {
+  acumuladoAnio, kpiPeriodo, puentePrecioVolumenMezcla, rutasAtipicas, serieMensual, topContribuyentes, variacionPorDimension, versionVigente,
+} from "@/lib/semantic/queries";
 import { requerirAcceso } from "@/lib/auth/acceso";
 
 export default async function Inicio(props: PageProps<"/">) {
@@ -23,20 +28,25 @@ export default async function Inicio(props: PageProps<"/">) {
   const v = version.version;
 
   // Todas las cifras salen de las funciones SQL de la versión publicada; aquí solo se presentan.
-  const [kpi, kpiOtra, canales, rutas, serie, serieAnt] = await Promise.all([
+  const anterior = mesAnterior(periodo);
+  const [kpi, kpiOtra, canales, rutas, serie, serieAnt, puente, acumulado, atipicas] = await Promise.all([
     kpiPeriodo({ version: v, periodo, comparar: cmp, filtros }),
     kpiPeriodo({ version: v, periodo, comparar: otra, filtros }),
     variacionPorDimension({ version: v, dimension: "canal", periodo, comparar: cmp, filtros }),
     topContribuyentes({ version: v, periodo, comparar: cmp, filtros, limite: 10 }),
     serieMensual({ version: v, anio: periodo.anio, filtros }),
     serieMensual({ version: v, anio: periodo.anio - 1, filtros }),
+    // G9: análisis comercial (0014_analisis.sql).
+    puentePrecioVolumenMezcla({ version: v, periodo, comparar: cmp, filtros, limite: 5 }),
+    acumuladoAnio({ version: v, periodo, filtros }),
+    rutasAtipicas({ version: v, periodo, filtros, limite: 10 }),
   ]);
 
   const qs = queryString(estado);
   const contra = periodoLargo(cmp);
   const contraOtra = periodoLargo(otra);
   const totalCanal = canales.reduce((s, f) => s + f.variacion, 0);
-  const avisos = advertencias(periodo, cmp, meta.periodos);
+  const avisos = [...advertencias(periodo, cmp, meta.periodos), ...advertenciasAcumulado(acumulado, meta.periodos)];
   const puntos: PuntoSerie[] = Array.from({ length: 12 }, (_, i) => i + 1)
     .map((mes) => ({
       mes,
@@ -61,6 +71,12 @@ export default async function Inicio(props: PageProps<"/">) {
         <KpiCard titulo="Precio promedio" valor={precioKg(kpi.precio_kg)} sufijo="/kg" variaciones={vars(kpi, kpiOtra, "precio_kg", contra, contraOtra)} />
         <KpiCard titulo="Clientes con compra" valor={conteo(kpi.clientes_con_compra)} variaciones={vars(kpi, kpiOtra, "clientes_con_compra", contra, contraOtra)} />
       </div>
+
+      <Seccion titulo={`Acumulado del año · ${rangoAcumulado(periodo.anio, periodo.mes)}`}
+        detalle={`Enero a ${periodoLargo(periodo)} contra el mismo tramo de ${periodo.anio - 1}`}
+        accion={<Preguntar qs={qs} sobre="acumulado" />}>
+        <AcumuladoKpis a={acumulado} />
+      </Seccion>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Seccion titulo={`Venta neta mensual ${periodo.anio}`} detalle={`L millones · línea punteada: ${periodo.anio - 1}`}
@@ -99,6 +115,27 @@ export default async function Inicio(props: PageProps<"/">) {
             ))}
           </TableBody>
         </Table>
+      </Seccion>
+
+      <Seccion titulo={`Precio, volumen y mezcla vs. ${contra}`}
+        detalle={`${lempirasCompacto(puente.venta_neta_cmp)} → ${lempirasCompacto(puente.venta_neta)} · cada renglón explica una parte de la variación`}
+        accion={<Preguntar qs={qs} sobre="precio" />}>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <PuenteChart pasos={pasosPuente(puente, periodo, cmp)} total={puente.variacion} />
+          <PuenteProductos p={puente} periodo={periodo} comparado={cmp} />
+        </div>
+      </Seccion>
+
+      <Seccion titulo="Rutas fuera de lo normal"
+        detalle={`Cambio de ${periodoLargo(periodo)} contra ${periodoLargo(anterior)}, comparado con lo que cada ruta suele moverse en los 12 meses anteriores`}
+        accion={<Preguntar qs={qs} sobre="atipicas" />}>
+        <RutasAtipicasTabla r={atipicas} periodo={periodo} anterior={anterior} />
+        {atipicas.rutas_pequenas + atipicas.rutas_sin_historia > 0 && (
+          <p className="mt-2 text-xs text-neutral-500 tabular-nums">
+            Se evaluaron {atipicas.rutas_evaluadas} rutas. Quedan fuera {atipicas.rutas_pequenas} rutas chicas (promedio menor a {lempirasCompacto(atipicas.umbral_promedio)} al mes)
+            y {atipicas.rutas_sin_historia} sin historia suficiente o sin venta el mes anterior.
+          </p>
+        )}
       </Seccion>
 
       <Pie version={version} kpi={kpi} avisos={avisos} />

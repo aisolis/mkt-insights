@@ -6,7 +6,8 @@ import {
 } from "@/lib/asistente/conversaciones";
 import { acotarMemoria, memoriaDe } from "@/lib/asistente/memoria";
 import { reglasActivas } from "@/lib/asistente/reglas-servidor";
-import { modeloActivo } from "@/lib/asistente/config-servidor";
+import { columnasUso, modeloParaPregunta } from "@/lib/asistente/config-servidor";
+import { usoVacio } from "@/lib/asistente/modelo";
 import { responder } from "@/lib/asistente/responder";
 import type { Contexto } from "@/lib/asistente/tipos";
 import { buscarDocumentos } from "@/lib/conocimiento/servidor";
@@ -58,11 +59,14 @@ export async function POST(request: Request) {
   ]);
   const ctx: Contexto = { fuente, version, estado, documentos: buscarDocumentos, memoria: acotarMemoria(memoriaDe(ultimaOk), version.metadatos), reglas };
 
-  const modelo = await modeloActivo(); // el elegido en Configuración del asistente (o automático)
+  // El elegido en Configuración del asistente (o automático). Con el tope de gasto del mes alcanzado o un modelo
+  // fuera de la lista de permitidos responde el análisis automático, con aviso y marcado en la bitácora (G9).
+  const { modelo, aviso, motivo } = await modeloParaPregunta();
+  const uso = usoVacio(); // tokens y costo de todas las rondas, también si la pregunta termina en error
   const inicio = Date.now();
   const base = {
     usuario_id: usuario.id, conversacion_id: conversacion.id, version: version.version, contexto, pregunta,
-    modelo: modelo?.modelo ?? null, reglas: reglas.map((r) => r.id),
+    modelo: modelo?.modelo ?? null, reglas: reglas.map((r) => r.id), motivo_automatico: motivo,
   };
   // Si la base falla al cerrar, la respuesta ya quedó registrada: no se convierte en error ni en un segundo turno.
   const cierre = async () => {
@@ -76,14 +80,21 @@ export async function POST(request: Request) {
     }
   };
   try {
-    const respuesta = await responder(pregunta, historial, ctx, modelo);
-    await registrarTurno({
-      ...base, estado: respuesta.estado, modo: respuesta.modo, texto: respuesta.texto, respuesta, error: null, duracion_ms: Date.now() - inicio,
+    const respuesta = await responder(pregunta, historial, ctx, modelo, { uso, aviso });
+    const duracion_ms = Date.now() - inicio;
+    const turnoId = await registrarTurno({
+      ...base, ...(await columnasUso(uso, modelo?.modelo ?? null)),
+      estado: respuesta.estado, modo: respuesta.modo, texto: respuesta.texto, respuesta, error: null, duracion_ms,
     });
-    return Response.json({ ...respuesta, ...(await cierre()) });
+    // turnoId: para valorar la respuesta o agregarla al informe (null si la bitácora falló).
+    return Response.json({ ...respuesta, turnoId, ...(await cierre()) });
   } catch (e) {
     const mensaje = e instanceof Error ? e.message : String(e);
-    await registrarTurno({ ...base, estado: "error", modo: null, texto: null, respuesta: null, error: mensaje, duracion_ms: Date.now() - inicio });
+    const duracion_ms = Date.now() - inicio;
+    await registrarTurno({
+      ...base, ...(await columnasUso(uso, modelo?.modelo ?? null).catch(() => ({}))),
+      estado: "error", modo: null, texto: null, respuesta: null, error: mensaje, duracion_ms,
+    });
     console.error("asistente:", e);
     const extra = await cierre();
     return Response.json({ error: "No se pudo responder la pregunta. Quedó registrada para revisión.", ...extra }, { status: 500 });

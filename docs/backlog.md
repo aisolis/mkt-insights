@@ -70,3 +70,38 @@
 - [x] Configuración del asistente (`/asistente/configuracion`, solo admin): pestañas Modelo de IA, Reglas y Bitácora en un solo lugar
 - [x] Elegir el modelo de OpenRouter desde la app (catálogo en vivo, solo modelos con herramientas, precios por millón), apagar la IA, probar un modelo con una pregunta sin guardarlo; historial de cambios — `0013_config_asistente.sql`. `OPENROUTER_MODEL` queda como modelo por defecto
 - [ ] Proyecto alojado: revisar en OpenRouter la política de datos de los proveedores habilitados antes de producción
+
+## G9 — Asistente
+- [x] Valoración de cada respuesta (👍/👎 con comentario opcional), en el chat y en las conversaciones guardadas; solo el dueño del turno (lo comprueba la base); en la Bitácora: columna, filtro «Con 👎 / Con 👍», detalle y resumen — `0017_asistente_uso.sql`
+- [x] Costo por pregunta: tokens y costo en dólares que informa OpenRouter, sumados en todas las rondas de herramientas (sin costo informado se estima con los precios del catálogo); por pregunta, total del periodo y por modelo en la Bitácora; «Gasto de IA este mes» en Modelo de IA
+- [x] Tope de gasto mensual opcional (Modelo de IA, con historial): al llegar, el asistente responde con el análisis automático con aviso y la pregunta queda marcada; «Probar» también se frena y su costo cuenta para el tope
+- [x] `OPENROUTER_MODELOS_PERMITIDOS` (opcional, ids exactos o `proveedor/*`): el catálogo, guardar y probar solo aceptan esos; un modelo configurado fuera de la lista responde en automático con aviso
+- [x] Informe personal (`/informe`): «Agregar al informe» en cada respuesta; ordenar, quitar, título y nota; «Imprimir o guardar PDF» con la evidencia de cada respuesta (versión, corte, advertencias); solo lo propio
+- [ ] Menú: entrada «Informe» (`/informe`)
+- [ ] Proyecto alojado: aplicar `0017_asistente_uso.sql` y decidir tope mensual y lista de modelos permitidos con BIA
+
+## G9 — Dashboard
+- [x] Vistas guardadas en la barra de filtros (botón "Vistas"): aplicar, guardar los filtros de ahora con periodo fijo o "siempre el último mes", renombrar, borrar y compartir con el equipo (se ve quién la creó); solo parámetros conocidos — `0018_vistas.sql`
+
+## G9 — Operación
+- [x] Homologación de canales desde la app (`/cargas/homologacion`, admin o aprobador): equivalencias, canales sin homologar con sus ventas, agregar/cambiar/quitar con bitácora; se re-aplica a las cargas validadas sin publicar, nunca a lo publicado (S19) — `0016_operacion.sql`
+- [x] Alertas por canal antes de publicar: contra lo publicado del mismo mes (> 5 %) o el promedio de los 3 meses anteriores (> 25 %), sin canales chicos (S20)
+- [x] Resumen ejecutivo del mes (`/resumen?version=N&periodo=YYYY-MM`): KPI contra mes anterior y año anterior, canales/rutas/marcas que explican la variación, advertencias; imprimible o PDF; enlazado al publicar y en cada versión (S21)
+- [x] Correo opcional al publicar con el resumen (Resend, `src/lib/correo.ts`); solo en producción, en desarrollo queda en el log
+- [ ] Proyecto alojado: configurar `RESEND_API_KEY` y `RESEND_FROM` (dominio verificado en Resend) y probar un envío real con una lista corta
+- [ ] Menú: entrada «Resumen del mes» (`/resumen`)
+- [ ] Homologar SEMI-MAYOREO y PENDIENTE cuando BIA decida (desde la app; octubre se corrige volviendo a subirlo y publicarlo)
+
+## G9 — Clientes (Plus)
+- [x] Pantalla Clientes (`/clientes`, solo Plus): activos, nuevos, recuperados, siguen comprando, en riesgo y perdidos con sus ventas; reparto por ruta principal; lista por estado paginada con última compra y exportación CSV (`/api/clientes`); la base exige Plus (S22) — `0015_clientes.sql`
+- [ ] Confirmar con Nati el umbral de "en riesgo" (hoy caída > 50 % contra el periodo comparado) y si "nuevo" debe mirar más de un año atrás cuando llegue más historia
+
+## G9 — Análisis comercial
+- [x] Puente precio–volumen–mezcla entre el mes y su comparado, con los filtros del dashboard: volumen, precio, mezcla, productos nuevos, que dejaron de venderse y ajustes sin kg; cuadra al centavo con la variación (S23) — `0014_analisis.sql`
+- [x] Sección "Precio, volumen y mezcla" en el dashboard: cascada de la variación y productos con más efecto precio y mezcla
+- [x] Acumulado del año (enero..mes contra el mismo tramo del año anterior): venta neta, volumen, precio por kg y clientes con compra, con advertencias de meses parciales, faltantes y sin certificar (S24)
+- [x] Rutas fuera de lo normal: cambio del mes contra el anterior frente a los 12 meses previos de cada ruta (mediana y desviación robusta, sin rutas chicas), con el motivo en palabras (S25)
+- [x] Asistente: herramientas `puente_precio_volumen_mezcla`, `acumulado_anio` y `rutas_atipicas`, con hechos verificables y disparadores en modo automático ("precio o volumen", "mezcla", "en lo que va del año", "acumulado", "YTD", "fuera de lo normal", "atípicas")
+- [ ] Asistente: pregunta sugerida al llegar desde las secciones nuevas (`?sobre=acumulado|precio|atipicas`) y una línea en las instrucciones del modelo sobre las herramientas nuevas
+- [ ] Confirmar con Nati el umbral de rutas fuera de lo normal (|puntaje| ≥ 3.5, rutas ≥ 0.1 % del promedio) después de revisarlo un par de meses
+- [ ] Proyecto alojado: aplicar `0014_analisis.sql`

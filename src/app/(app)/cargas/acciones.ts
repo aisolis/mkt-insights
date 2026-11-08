@@ -1,8 +1,10 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requerirGestorCargas } from "@/lib/auth/acceso";
-import { conciliar, descartar, MetaCarga, prepararCarga, publicar, retirar, type SubidaCarga } from "@/lib/cargas/servidor";
+import { conciliar, descartar, enviarResumenPublicado, MetaCarga, prepararCarga, publicar, retirar, type SubidaCarga } from "@/lib/cargas/servidor";
 
 export type Estado = { error?: string; ok?: string } | null;
 
@@ -27,7 +29,18 @@ export async function publicarCarga(_: Estado, form: FormData): Promise<Estado> 
   if (!id.success) return { error: "Carga no válida." };
   const notas = String(form.get("notas") ?? "").trim().slice(0, 500) || null;
   const r = await publicar(id.data, notas, form.get("mesCompleto") === "on", form.get("revisado") === "on", usuario.id);
-  return listo(r, r.version ? `Publicada la versión v${r.version}.` : "");
+  if (r.error || !r.version) return { error: r.error ?? "No se pudo publicar." };
+  revalidatePath("/cargas");
+  revalidatePath("/", "layout"); // la cabecera y el dashboard muestran la versión vigente
+  // Opcional: el resumen del mes al equipo. Solo sale en producción (src/lib/correo.ts); nunca frena la publicación.
+  let correo = "";
+  if (form.get("correo") === "on") {
+    const h = await headers();
+    const origen = h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host")}`;
+    correo = `&correo=${await enviarResumenPublicado(r.version, origen)}`;
+  }
+  // La tarjeta de la carga desaparece al publicarse: el aviso (con el enlace al resumen) lo muestra la página.
+  redirect(`/cargas?publicada=${r.version}${correo}`);
 }
 
 export async function retirarVersion(_: Estado, form: FormData): Promise<Estado> {

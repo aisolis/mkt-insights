@@ -19,3 +19,18 @@ export type Version = {
   ultimo_mes_cerrado: boolean; meses: { anio: number; mes: number }[] | null; meses_reemplazados: { anio: number; mes: number }[];
   conciliada_bi: boolean; conciliada_nota: string | null; conciliada_en: string | null; retirada_en: string | null; motivo_retiro: string | null;
 };
+
+/** Venta neta de un canal (ya homologado) en un mes: de una carga o de la versión vigente. Alertas por canal (S20). */
+export type CanalMes = { anio: number; mes: number; canal: string; venta_neta: number };
+
+/** Equivalencia "canal de origen → canal BIA" (S2) y lo que queda pendiente de homologar en las cargas (S19). */
+export type Homologacion = { valor_origen: string; valor_homologado: string; revisar: boolean };
+export type CanalPendiente = {
+  canal_origen: string; canal_actual: string; homologado_a: string | null; carga_id: string; archivo: string; estado: string;
+  en_vigente: boolean; anio: number; mes: number; filas: number; venta_neta: number; kg: number;
+};
+export type CambioHomologacion = {
+  id: number; valor_origen: string; accion: "creada" | "editada" | "eliminada"; antes: { valor_homologado: string } | null;
+  despues: { valor_homologado: string } | null; cargas_actualizadas: { carga_id: string; archivo: string; filas: number }[];
+  usuario: string | null; creado_en: string;
+};

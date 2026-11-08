@@ -7,9 +7,11 @@
 import { z } from "zod";
 import type { PuntoSerie } from "@/components/dashboard/serie-chart";
 import { capital, conteo, lempiras, lempirasCompacto, periodoCorto, periodoLargo, precioKg, toneladas } from "@/lib/format";
-import { Dimension, type Filtros, type Periodo, type VersionVigente } from "@/lib/semantic/contracts";
+import { advertenciasAcumulado, efectoPrincipal, fraccionSigno, mesAnterior, motivoAtipica, pasosPuente, rangoAcumulado, rangoNormal } from "@/lib/dashboard/analisis";
+import type { crearConsultas } from "@/lib/semantic/consultas";
+import { Dimension, type Acumulado, type Filtros, type Periodo, type Puente, type RutasAtipicas, type VersionVigente } from "@/lib/semantic/contracts";
 import { describirFiltros, lempirasSigno, leerPeriodo, nombreProducto, normalizar, participacion, pctTexto, rango } from "./texto";
-import type { Contexto, Resultado, Visual } from "./tipos";
+import type { Contexto, Fuente, Resultado, Visual } from "./tipos";
 
 const PeriodoArg = z.string().describe("Mes en formato AAAA-MM, p. ej. 2026-09");
 const FiltrosArg = z.object({
@@ -46,6 +48,19 @@ export const CATALOGO = {
     descripcion: "Descompone la venta de dos meses en clientes con compra, facturas, facturas por cliente, ticket por factura y venta por cliente. Sirve para separar frecuencia de compra de valor por compra.",
     args: z.object({ periodo: PeriodoArg, comparado: PeriodoArg, filtros: FiltrosArg }),
   },
+  // G9 — análisis comercial (0014_analisis.sql)
+  puente_precio_volumen_mezcla: {
+    descripcion: "Separa la variación de venta neta entre dos meses en efecto volumen (vender más o menos kg), efecto precio (precio por kg de cada producto, ya con descuentos), efecto mezcla (más o menos peso de productos caros frente a baratos) y productos nuevos o que dejaron de venderse. Los renglones suman exactamente la variación total. Úsala cuando pregunten si la variación fue por precio, por volumen o por mezcla.",
+    args: z.object({ periodo: PeriodoArg, comparado: PeriodoArg, filtros: FiltrosArg }),
+  },
+  acumulado_anio: {
+    descripcion: "Acumulado del año: venta neta, volumen (kg), precio promedio por kg y clientes con compra de enero al mes indicado, contra el mismo tramo del año anterior. Para preguntas de 'en lo que va del año', 'acumulado' o 'YTD'.",
+    args: z.object({ periodo: PeriodoArg.describe("Último mes del tramo, en formato AAAA-MM; el tramo va de enero a ese mes"), filtros: FiltrosArg }),
+  },
+  rutas_atipicas: {
+    descripcion: "Rutas cuya variación de venta neta contra el mes anterior se sale de lo normal frente a sus propios cambios de mes a mes de los 12 meses anteriores (regla robusta con mediana; deja fuera las rutas chicas). Devuelve el motivo de cada una en palabras.",
+    args: z.object({ periodo: PeriodoArg, filtros: FiltrosArg, limite: z.number().int().min(1).max(20).optional() }),
+  },
 } as const;
 export type NombreHerramienta = keyof typeof CATALOGO;
 
@@ -77,6 +92,18 @@ export async function ejecutar(nombre: string, crudos: unknown, ctx: Contexto, i
       ctx.fuente.serieMensual({ version: v, anio: anio - 1, filtros }),
     ]);
     return serieMensual(id, anio, filtros, serie, serieAnt, ctx);
+  }
+
+  if (h === "acumulado_anio") {
+    const periodo = periodoValido(a.periodo as string, meta);
+    const acu = await analisis(ctx).acumuladoAnio({ version: v, periodo, filtros });
+    return acumulado(id, periodo, filtros, acu, ctx);
+  }
+  if (h === "rutas_atipicas") {
+    const periodo = periodoValido(a.periodo as string, meta);
+    const limite = (a.limite as number | undefined) ?? 10;
+    const r = await analisis(ctx).rutasAtipicas({ version: v, periodo, filtros, limite });
+    return rutasAtipicas(id, periodo, filtros, limite, r, ctx);
   }
 
   const periodo = periodoValido(a.periodo as string, meta);
@@ -163,6 +190,11 @@ export async function ejecutar(nombre: string, crudos: unknown, ctx: Contexto, i
     };
   }
 
+  if (h === "puente_precio_volumen_mezcla") {
+    const p = await analisis(ctx).puentePrecioVolumenMezcla({ ...base, limite: 5 });
+    return { ...comun, ...puente(p, periodo, comparado, sufijo) };
+  }
+
   // descomposicion
   const d = await ctx.fuente.descomposicion(base);
   const A = d.actual, B = d.anterior;
@@ -211,6 +243,126 @@ function serieMensual(id: string, anio: number, filtros: Filtros, serie: { mes: 
     resumen: puntos.map((p) => ({ mes: periodoCorto({ anio, mes: p.mes }), venta_neta: p.actual === null ? null : lempirasCompacto(p.actual), anio_anterior: p.anterior === null ? null : lempirasCompacto(p.anterior), variacion_interanual: p.actual === null || p.anterior === null ? null : pctTexto(p.actual, p.anterior), parcial: p.parcial })),
     hechos,
     visual: { tipo: "serie", titulo: `Venta neta mensual ${anio} · L millones · línea punteada: ${anio - 1}`, anio, mesSeleccionado: ctx.estado.periodo.anio === anio ? ctx.estado.periodo.mes : 0, puntos } satisfies Visual,
+  };
+}
+
+// G9 — análisis comercial -----------------------------------------------------------------------------------------
+
+type FuenteAnalisis = Pick<ReturnType<typeof crearConsultas>, "puentePrecioVolumenMezcla" | "acumuladoAnio" | "rutasAtipicas">;
+
+/** Las consultas de G9 viajan en la misma fuente (en la app, src/lib/semantic/queries); un doble sin ellas falla claro. */
+function analisis(ctx: Contexto): FuenteAnalisis {
+  const f = ctx.fuente as Fuente & Partial<FuenteAnalisis>;
+  if (!f.puentePrecioVolumenMezcla || !f.acumuladoAnio || !f.rutasAtipicas) throw new ErrorHerramienta("el análisis comercial no está disponible en esta fuente de datos");
+  return f as FuenteAnalisis;
+}
+
+const EFECTO_TXT = { volumen: "volumen", precio: "precio", mezcla: "mezcla", nuevos: "productos nuevos", descontinuados: "productos que dejaron de venderse", sin_volumen: "ajustes sin kg" } as const;
+const kgTxt = (kg: number) => `${conteo(kg)} kg`;
+
+/** S23: renglones que suman la variación al centavo, con el producto que más pesa en precio y en mezcla. */
+function puente(p: Puente, periodo: Periodo, comparado: Periodo, sufijo: string): Pick<Resultado, "calculo" | "datos" | "resumen" | "hechos" | "visual"> {
+  const pasos = pasosPuente(p, periodo, comparado);
+  const principal = efectoPrincipal(p);
+  const pp = p.detalle_precio[0], pm = p.detalle_mezcla[0];
+  const fmt = (d: Puente["detalle_precio"][number]) => ({
+    producto: `${d.descripcion} (${d.art_codigo})`, precio_kg: precioKg(d.precio_kg), precio_kg_anterior: precioKg(d.precio_kg_cmp),
+    kg: kgTxt(d.kg), kg_anterior: kgTxt(d.kg_cmp), efecto_precio: lempirasSigno(d.efecto_precio), efecto_mezcla: lempirasSigno(d.efecto_mezcla),
+  });
+  const hechos = [
+    `La variación de venta neta ${rango(periodo, comparado)} fue ${lempirasSigno(p.variacion)} (${lempirasCompacto(p.venta_neta)} vs. ${lempirasCompacto(p.venta_neta_cmp)}${sufijo}) y se reparte así: ${pasos.map((x) => `${EFECTO_TXT[x.clave]} ${lempirasSigno(x.valor)}`).join(", ")}.`,
+    `El efecto que más pesa es el de ${EFECTO_TXT[principal]} (${lempirasSigno(p[principal])}). En los ${conteo(p.productos_comparables)} productos que vendieron en ambos meses, el precio promedio pasó de ${precioKg(p.precio_kg_comparables_cmp)}/kg a ${precioKg(p.precio_kg_comparables)}/kg y el volumen de ${toneladas(p.kg_comparables_cmp)} t a ${toneladas(p.kg_comparables)} t.`,
+  ];
+  if (pp) hechos.push(`Mayor efecto precio: ${pp.descripcion} (${lempirasSigno(pp.efecto_precio)}; de ${precioKg(pp.precio_kg_cmp)}/kg a ${precioKg(pp.precio_kg)}/kg).`);
+  if (pm) hechos.push(`Mayor efecto mezcla: ${pm.descripcion} (${lempirasSigno(pm.efecto_mezcla)}; de ${kgTxt(pm.kg_cmp)} a ${kgTxt(pm.kg)}).`);
+  return {
+    calculo: "ventas.puente_precio_volumen_mezcla", datos: p,
+    resumen: {
+      variacion_total: lempirasSigno(p.variacion), venta_neta: lempirasCompacto(p.venta_neta), venta_neta_anterior: lempirasCompacto(p.venta_neta_cmp),
+      efectos: pasos.map((x) => ({ efecto: x.nombre, valor: lempirasSigno(x.valor), que_mide: x.explicacion })),
+      productos_comparables: conteo(p.productos_comparables),
+      precio_kg_comparables: { actual: precioKg(p.precio_kg_comparables), anterior: precioKg(p.precio_kg_comparables_cmp) },
+      mayor_efecto_precio: p.detalle_precio.map(fmt), mayor_efecto_mezcla: p.detalle_mezcla.map(fmt),
+      principales_nuevos: p.principales_nuevos.map((x) => ({ producto: `${x.descripcion} (${x.art_codigo})`, venta_neta: lempirasSigno(x.variacion) })),
+      principales_descontinuados: p.principales_descontinuados.map((x) => ({ producto: `${x.descripcion} (${x.art_codigo})`, venta_neta_perdida: lempirasSigno(x.variacion) })),
+    },
+    hechos,
+    visual: {
+      tipo: "tabla", titulo: `Precio, volumen y mezcla · ${rango(periodo, comparado)}`, columnas: ["Renglón", "Lempiras", "Qué mide"],
+      filas: [...pasos.map((x) => [x.nombre, lempirasSigno(x.valor), x.explicacion]), ["Variación total", lempirasSigno(p.variacion), "Suma de los renglones, al centavo."]],
+    },
+  };
+}
+
+/** S24: enero..mes contra el mismo tramo del año anterior. */
+function acumulado(id: string, periodo: Periodo, filtros: Filtros, a: Acumulado, ctx: Contexto): Resultado {
+  const meta = ctx.version.metadatos;
+  const comparado = { anio: periodo.anio - 1, mes: periodo.mes };
+  const r1 = rangoAcumulado(a.anio, a.mes), r0 = rangoAcumulado(a.anio - 1, a.mes);
+  const sufijo = Object.keys(filtros).length ? `, ${describirFiltros(filtros, meta)}` : "";
+  const pctPrecio = a.precio_kg === null || a.precio_kg_cmp === null ? "sin base" : pctTexto(a.precio_kg, a.precio_kg_cmp);
+  const filas: [string, string, string, string][] = [
+    ["Venta neta", lempirasCompacto(a.venta_neta), lempirasCompacto(a.venta_neta_cmp), pctTexto(a.venta_neta, a.venta_neta_cmp)],
+    ["Volumen (t)", toneladas(a.kg), toneladas(a.kg_cmp), pctTexto(a.kg, a.kg_cmp)],
+    ["Precio promedio (L/kg)", precioKg(a.precio_kg), precioKg(a.precio_kg_cmp), pctPrecio],
+    ["Clientes con compra", conteo(a.clientes_con_compra), conteo(a.clientes_con_compra_cmp), pctTexto(a.clientes_con_compra, a.clientes_con_compra_cmp)],
+  ];
+  const dif = a.venta_neta - a.venta_neta_cmp;
+  const avisos = advertenciasAcumulado(a, meta.periodos);
+  return {
+    id, herramienta: "acumulado_anio", argumentos: { periodo: `${periodo.anio}-${String(periodo.mes).padStart(2, "0")}`, filtros },
+    calculo: "ventas.acumulado_anio", periodo, comparado, filtros, datos: a,
+    resumen: {
+      tramo: r1, comparado_con: r0, diferencia_venta_neta: lempirasSigno(dif),
+      indicadores: filas.map(([indicador, actual, anterior, variacion]) => ({ indicador, actual, anterior, variacion })),
+      advertencias: avisos,
+    },
+    hechos: [
+      `Acumulado ${r1}: venta neta ${lempirasCompacto(a.venta_neta)} vs. ${lempirasCompacto(a.venta_neta_cmp)} en ${r0} (${lempirasSigno(dif)}, ${pctTexto(a.venta_neta, a.venta_neta_cmp)}${sufijo}).`,
+      `Volumen ${toneladas(a.kg)} t vs. ${toneladas(a.kg_cmp)} t (${pctTexto(a.kg, a.kg_cmp)}); precio promedio ${precioKg(a.precio_kg)}/kg vs. ${precioKg(a.precio_kg_cmp)}/kg (${pctPrecio}); clientes con compra en el tramo ${conteo(a.clientes_con_compra)} vs. ${conteo(a.clientes_con_compra_cmp)} (${pctTexto(a.clientes_con_compra, a.clientes_con_compra_cmp)}).`,
+      ...avisos,
+    ],
+    visual: { tipo: "tabla", titulo: `Acumulado del año · ${r1} vs. ${r0}`, columnas: ["Indicador", capital(r1), capital(r0), "Variación"], filas },
+  };
+}
+
+/** S25: rutas cuyo cambio contra el mes anterior se sale de su historia de 12 meses. */
+function rutasAtipicas(id: string, periodo: Periodo, filtros: Filtros, limite: number, r: RutasAtipicas, ctx: Contexto): Resultado {
+  const meta = ctx.version.metadatos;
+  const anterior = mesAnterior(periodo);
+  const sufijo = Object.keys(filtros).length ? ` (${describirFiltros(filtros, meta)})` : "";
+  const hechos = !r.hay_anterior
+    ? [`${capital(periodoLargo(anterior))} no tiene datos en esta versión: no hay contra qué comparar las rutas de ${periodoLargo(periodo)}.`]
+    : !r.rutas.length
+      ? [`Ninguna de las ${conteo(r.rutas_evaluadas)} rutas evaluadas se salió de lo normal en ${periodoLargo(periodo)} contra ${periodoLargo(anterior)}${sufijo}.`]
+      : [
+        `En ${periodoLargo(periodo)}, ${conteo(r.rutas_fuera)} de ${conteo(r.rutas_evaluadas)} rutas evaluadas se salieron de lo normal contra ${periodoLargo(anterior)}${sufijo}.`,
+        ...r.rutas.slice(0, 3).map((x) => `${x.ruta} (${x.canal}): ${motivoAtipica(x, anterior)}`),
+      ];
+  return {
+    id, herramienta: "rutas_atipicas", argumentos: { periodo: `${periodo.anio}-${String(periodo.mes).padStart(2, "0")}`, filtros, limite },
+    calculo: "ventas.rutas_atipicas", periodo, comparado: anterior, filtros, datos: r,
+    resumen: {
+      criterio: "Cambio del mes contra el mes anterior frente a los cambios de mes a mes de los 12 meses anteriores de la misma ruta (mediana y desviación robusta); se excluyen rutas chicas y rutas con menos de 6 meses de historia.",
+      rutas_evaluadas: conteo(r.rutas_evaluadas), rutas_fuera_de_lo_normal: conteo(r.rutas_fuera),
+      rutas_chicas_excluidas: conteo(r.rutas_pequenas), rutas_sin_historia: conteo(r.rutas_sin_historia),
+      rutas: r.rutas.map((x) => {
+        const { bajo, alto } = rangoNormal(x);
+        return {
+          ruta: x.ruta, canal: x.canal, actual: lempirasCompacto(x.actual), anterior: lempirasCompacto(x.anterior), variacion: lempirasSigno(x.variacion),
+          cambio: fraccionSigno(x.cambio), rango_normal: `${fraccionSigno(bajo)} a ${fraccionSigno(alto)}`, motivo: motivoAtipica(x, anterior),
+        };
+      }),
+    },
+    hechos,
+    visual: {
+      tipo: "tabla", titulo: `Rutas fuera de lo normal · ${rango(periodo, anterior)}`,
+      columnas: ["Ruta", "Canal", capital(periodoCorto(periodo)), capital(periodoCorto(anterior)), "Cambio", "Lo normal"],
+      filas: r.rutas.map((x) => {
+        const { bajo, alto } = rangoNormal(x);
+        return [x.ruta, x.canal, lempirasCompacto(x.actual), lempirasCompacto(x.anterior), fraccionSigno(x.cambio), `${fraccionSigno(bajo)} a ${fraccionSigno(alto)}`];
+      }),
+    },
   };
 }
 

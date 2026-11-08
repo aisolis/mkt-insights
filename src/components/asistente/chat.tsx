@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { CanalChart } from "@/components/dashboard/canal-chart";
 import { SerieChart } from "@/components/dashboard/serie-chart";
-import type { ConversacionResumen, TurnoGuardado } from "@/lib/asistente/conversaciones";
+import type { ConversacionResumen, TurnoGuardado, Valoracion } from "@/lib/asistente/conversaciones";
 import type { Respuesta, Visual } from "@/lib/asistente/tipos";
 import type { Cita } from "@/lib/conocimiento/tipos";
 import { fechaCorta, lempiras, mesNombre, capital } from "@/lib/format";
@@ -11,10 +11,12 @@ import {
   Destello, FlechaArriba, IconoAlerta, IconoCaja, IconoCodigo, IconoDocumento, IconoEscudo, IconoGrafico, IconoMapa,
   IconoMas, IconoPersonas, IconoTabla, IconoTendencia,
 } from "./iconos";
+import { AccionesRespuesta } from "./acciones-respuesta";
 import { IconoConversaciones, PanelConversaciones } from "./conversaciones";
 import { aFilas, TablaDatos, type Datos } from "./tabla-datos";
 
-type Intercambio = { pregunta: string; respuesta?: Respuesta; error?: string };
+/** `id`: el turno en la bitácora (para valorarlo o agregarlo al informe, G9). */
+type Intercambio = { id?: number; pregunta: string; respuesta?: Respuesta; error?: string; valoracion?: Valoracion | null; enInforme?: boolean };
 
 export type Sugerencia = { categoria: string; texto: string; icono: keyof typeof ICONOS };
 const ICONOS = { tendencia: IconoTendencia, personas: IconoPersonas, caja: IconoCaja, mapa: IconoMapa } as const;
@@ -45,7 +47,8 @@ type Props = {
   descartada?: boolean;
 };
 
-const aIntercambios = (turnos: TurnoGuardado[]): Intercambio[] => turnos.map(({ pregunta, respuesta, error }) => ({ pregunta, respuesta, error }));
+const aIntercambios = (turnos: TurnoGuardado[]): Intercambio[] =>
+  turnos.map(({ id, pregunta, respuesta, error, valoracion, enInforme }) => ({ id, pregunta, respuesta, error, valoracion, enInforme }));
 
 /**
  * Enlace directo a la conversación (?c=id), conservando periodo, filtros y `sobre`. Con history.replaceState
@@ -91,8 +94,8 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
         body: JSON.stringify(actual ? { pregunta, conversacionId: actual.id } : { pregunta, contexto }),
       });
       const json = await res.json();
-      const { conversacionId, preguntas: n, conversacion, ...resto } = json as {
-        conversacionId?: string; preguntas?: number; conversacion?: ConversacionResumen; error?: string;
+      const { conversacionId, preguntas: n, conversacion, turnoId, ...resto } = json as {
+        conversacionId?: string; preguntas?: number; conversacion?: ConversacionResumen; turnoId?: number | null; error?: string;
       };
       if (conversacion) ponerEnLista(conversacion);
       if (typeof n === "number") setPreguntas(n);
@@ -100,7 +103,9 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
         setActiva({ id: conversacionId, titulo: conversacion?.titulo ?? pregunta, contexto, contextoTxt });
         fijarUrl(conversacionId);
       }
-      const r: Intercambio = res.ok ? { pregunta, respuesta: resto as unknown as Respuesta } : { pregunta, error: resto.error ?? `Error ${res.status}` };
+      const r: Intercambio = res.ok
+        ? { id: turnoId ?? undefined, pregunta, respuesta: resto as unknown as Respuesta, valoracion: null, enInforme: false }
+        : { pregunta, error: resto.error ?? `Error ${res.status}` };
       setTurnos((ts) => [...ts.slice(0, -1), r]);
     } catch {
       setTurnos((ts) => [...ts.slice(0, -1), { pregunta, error: "No se pudo contactar al servidor." }]);
@@ -276,6 +281,10 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
                       {t.respuesta ? <RespuestaVista r={t.respuesta} /> : t.error ? (
                         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{t.error}</div>
                       ) : <Pensando />}
+                      {t.respuesta && t.id !== undefined && (
+                        // Guarda su propio estado: cambiar los turnos aquí movería el scroll a la última pregunta.
+                        <AccionesRespuesta key={t.id} turnoId={t.id} valoracion={t.valoracion ?? null} enInforme={!!t.enInforme} />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -433,7 +442,7 @@ export function RespuestaVista({ r }: { r: Respuesta }) {
         </ul>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-neutral-200 pt-3">
+      <div className="flex flex-wrap items-center gap-2 border-t border-neutral-200 pt-3 print:hidden">
         {r.consultas.length > 0 && (
           <Pastilla activa={panel === "consulta"} onClick={() => setPanel(panel === "consulta" ? null : "consulta")}>
             <IconoCodigo className="size-3.5" /> Ver consulta y datos

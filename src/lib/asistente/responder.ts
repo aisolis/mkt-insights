@@ -5,18 +5,25 @@
  * El contexto de documentos autorizados (G6) va aparte de los hechos, con documento y página.
  */
 import { elegirCitas, type Cita } from "@/lib/conocimiento/tipos";
+import { rangoAcumulado } from "@/lib/dashboard/analisis";
 import { advertencias, S1_SIN_CERTIFICAR_HASTA } from "@/lib/dashboard/params";
 import { fechaCorta, periodoLargo } from "@/lib/format";
 import type { Kpi } from "@/lib/semantic/contracts";
 import { reglaBloqueo, reglaFueraDeAlcance } from "./alcance";
 import { hipotesis, interpretar, llamadas, redactar } from "./determinista";
 import { ErrorHerramienta, ejecutar } from "./herramientas";
-import { preguntarAlModelo, type ConfigModelo } from "./modelo";
+import { preguntarAlModelo, type ConfigModelo, type Uso } from "./modelo";
 import { describirFiltros, periodoTxt, rango } from "./texto";
 import type { Contexto, Evidencia, Resultado, Respuesta, Turno } from "./tipos";
 import { cifrasNoVerificadas, cifrasPermitidas } from "./verificar";
 
-export async function responder(pregunta: string, historial: Turno[], ctx: Contexto, modelo: ConfigModelo | null): Promise<Respuesta> {
+/**
+ * `opciones.uso`: acumula tokens y costo de OpenRouter (G9). `opciones.aviso`: por qué se responde sin IA habiendo
+ * IA configurada (tope de gasto, modelo no permitido); va primero en las advertencias de la respuesta automática.
+ */
+export async function responder(
+  pregunta: string, historial: Turno[], ctx: Contexto, modelo: ConfigModelo | null, opciones: { uso?: Uso; aviso?: string | null } = {},
+): Promise<Respuesta> {
   const regla = reglaBloqueo(pregunta, ctx.reglas) ?? reglaFueraDeAlcance(pregunta);
   if (regla) {
     // Sin cifras del cubo. Si el tema lo admite, se muestran los documentos autorizados que hablen de eso.
@@ -32,7 +39,7 @@ export async function responder(pregunta: string, historial: Turno[], ctx: Conte
 
   if (modelo) {
     try {
-      const salida = await preguntarAlModelo(pregunta, historial, ctx, modelo);
+      const salida = await preguntarAlModelo(pregunta, historial, ctx, modelo, opciones.uso);
       const citadas = salida.citas.map((id) => salida.documentos.find((d) => d.id === id)).filter((d): d is Cita => !!d);
       if (salida.resultados.length) {
         const resultados = await conKpi(salida.resultados, ctx);
@@ -62,7 +69,7 @@ export async function responder(pregunta: string, historial: Turno[], ctx: Conte
       return determinista(pregunta, ctx, ["El modelo no respondió; se muestra el análisis automático."]);
     }
   }
-  return determinista(pregunta, ctx, []);
+  return determinista(pregunta, ctx, opciones.aviso ? [opciones.aviso] : []);
 }
 
 async function determinista(pregunta: string, ctx: Contexto, avisos: string[]): Promise<Respuesta> {
@@ -137,7 +144,10 @@ function evidencia(resultados: Resultado[], ctx: Contexto, avisos: string[]): Ev
     version: version.version,
     fecha_corte: fechaCorta(version.fecha_corte),
     conciliada_bi: version.conciliada_bi,
-    periodo: principal ? rango(periodo, principal.comparado!) : serie ? `año ${serie.argumentos.anio} vs. ${Number(serie.argumentos.anio) - 1}` : periodoLargo(periodo),
+    // El acumulado va de enero al mes indicado: "ene–sep 2026 vs. ene–sep 2025", no solo el último mes.
+    periodo: principal?.herramienta === "acumulado_anio"
+      ? `${rangoAcumulado(periodo.anio, periodo.mes)} vs. ${rangoAcumulado(periodo.anio - 1, periodo.mes)}`
+      : principal ? rango(periodo, principal.comparado!) : serie ? `año ${serie.argumentos.anio} vs. ${Number(serie.argumentos.anio) - 1}` : periodoLargo(periodo),
     filtros: describirFiltros(principal?.filtros ?? serie?.filtros ?? estado.filtros, meta),
     cobertura: kpi ? `${kpi.rutas_con_venta}/${kpi.rutas_total} rutas con venta en el periodo` : null,
     calculo: [...new Set(resultados.map((r) => r.calculo))],

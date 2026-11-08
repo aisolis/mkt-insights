@@ -1,7 +1,8 @@
 "use client";
 import { useActionState, useMemo, useState } from "react";
 import type { ModeloCatalogo } from "@/lib/asistente/config-servidor";
-import { guardarModelo, probar, type EstadoConfig, type EstadoPrueba } from "./acciones";
+import { usd } from "@/lib/asistente/dinero";
+import { guardarModelo, guardarTopeMensual, probar, type EstadoConfig, type EstadoPrueba } from "./acciones";
 
 const USD = new Intl.NumberFormat("es-HN", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const precio = (v: number | null) => (v === null ? "—" : v < 0.01 && v > 0 ? "< US$0.01" : USD.format(v).replace("USD", "US$"));
@@ -15,9 +16,12 @@ type Props = {
   catalogo: ModeloCatalogo[];
   errorCatalogo?: string;
   conLlave: boolean;
+  /** Lista de modelos permitidos del servidor (OPENROUTER_MODELOS_PERMITIDOS); null = todos. */
+  permitidos: string[] | null;
+  porDefectoPermitido: boolean;
 };
 
-export function FormModelo({ usarIa, modelo, porDefecto, catalogo, errorCatalogo, conLlave }: Props) {
+export function FormModelo({ usarIa, modelo, porDefecto, catalogo, errorCatalogo, conLlave, permitidos, porDefectoPermitido }: Props) {
   const [estado, accion, enviando] = useActionState<EstadoConfig, FormData>(guardarModelo, null);
   const [ia, setIa] = useState(usarIa);
   const [elegido, setElegido] = useState<string>(modelo ?? "");
@@ -55,8 +59,15 @@ export function FormModelo({ usarIa, modelo, porDefecto, catalogo, errorCatalogo
           <span>
             <span className="font-medium">El por defecto del servidor</span>
             <span className="block font-mono text-xs text-neutral-500">{porDefecto}</span>
+            {!porDefectoPermitido && <span className="block text-xs text-amber-800">No está en la lista de modelos permitidos: elige uno de la lista.</span>}
           </span>
         </label>
+        {permitidos && (
+          <p className="text-xs text-neutral-600">
+            El servidor solo permite estos modelos (variable OPENROUTER_MODELOS_PERMITIDOS): <span className="font-mono">{permitidos.join(", ")}</span>.
+            La lista de abajo ya viene filtrada; para cambiarla hay que editar la variable en el servidor.
+          </p>
+        )}
 
         <div className="flex flex-wrap gap-2">
           <input type="search" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar modelo (p. ej. claude, gpt, gemini, deepseek)…"
@@ -133,6 +144,33 @@ function Etiqueta({ children }: { children: React.ReactNode }) {
   return <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 align-[1px] text-[11px] font-normal text-neutral-600">{children}</span>;
 }
 
+/** Tope de gasto mensual de OpenRouter (G9). Vacío = sin tope. */
+export function FormTope({ tope }: { tope: number | null }) {
+  const [estado, accion, enviando] = useActionState<EstadoConfig, FormData>(guardarTopeMensual, null);
+  const [valor, setValor] = useState(tope === null ? "" : tope.toFixed(2));
+  const cambio = valor.trim() !== (tope === null ? "" : tope.toFixed(2));
+  return (
+    <form action={accion} className="space-y-2">
+      <label htmlFor="tope" className="block text-sm font-semibold">Tope de gasto mensual</label>
+      <p className="text-xs text-neutral-500">
+        Cuando el gasto del mes (preguntas + pruebas) llega al tope, el asistente responde con el análisis automático por reglas hasta el mes siguiente,
+        con un aviso en cada respuesta. Las cifras son las mismas. Déjalo vacío para no tener tope.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-neutral-600">US$</span>
+        <input id="tope" name="tope" inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="sin tope"
+          className="h-9 w-32 rounded-md border border-neutral-200 bg-white px-3 text-sm tabular-nums" />
+        <button type="submit" disabled={enviando || !cambio}
+          className="h-9 rounded-md bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-700 disabled:bg-neutral-300">
+          {enviando ? "Guardando…" : "Guardar tope"}
+        </button>
+        {estado?.error && <p className="text-sm text-red-700">{estado.error}</p>}
+        {estado?.ok && !cambio && <p className="text-sm text-emerald-700">{estado.ok}</p>}
+      </div>
+    </form>
+  );
+}
+
 const PREGUNTAS = [
   "¿Dónde se concentra la variación del mes?",
   "¿Bajó el número de facturas o el ticket?",
@@ -157,7 +195,10 @@ export function FormPrueba({ catalogo, sugerido }: { catalogo: ModeloCatalogo[];
           {enviando ? "Probando…" : "Probar"}
         </button>
       </div>
-      <p className="text-xs text-neutral-500">Responde con la versión publicada y el periodo por defecto. No cambia la configuración ni queda en la bitácora; sí gasta tokens.</p>
+      <p className="text-xs text-neutral-500">
+        Responde con la versión publicada y el periodo por defecto. No cambia la configuración ni queda en la bitácora; sí gasta tokens y su costo cuenta
+        para el tope del mes.
+      </p>
       {estado?.error && <p className="text-sm text-red-700">{estado.error}</p>}
       {r && (
         <div className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4 text-sm">
@@ -168,6 +209,10 @@ export function FormPrueba({ catalogo, sugerido }: { catalogo: ModeloCatalogo[];
               {r.estado === "fuera_de_alcance" ? "Fuera de alcance (no llama a la IA)" : r.verificada ? "Texto de la IA con cifras verificadas" : "Se usó la redacción automática"}
             </span>
             {r.herramientas.length > 0 && <span>Consultas: {r.herramientas.join(", ")}</span>}
+            <span>
+              {r.costoUsd === null ? "Costo: sin dato" : `Costo: ${r.costoEstimado ? "≈ " : ""}${usd(r.costoUsd)}`}
+              {r.tokens !== null && ` · ${r.tokens.toLocaleString("es-HN")} tokens`}
+            </span>
           </div>
           {r.aviso && <p className="text-xs text-amber-800">{r.aviso}</p>}
           <p className="leading-relaxed tabular-nums">{r.texto}</p>

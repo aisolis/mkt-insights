@@ -1,8 +1,8 @@
 import type { z } from "zod";
 import { z as zod } from "zod";
 import {
-  Descomposicion, DescomposicionRequest, Kpi, KpiRequest, SeriePunto, SerieRequest, TopFila, TopRequest,
-  VariacionFila, VariacionRequest, VersionVigente,
+  Acumulado, AcumuladoRequest, AtipicasRequest, Descomposicion, DescomposicionRequest, Kpi, KpiRequest, Puente, PuenteRequest,
+  RutasAtipicas, SeriePunto, SerieRequest, TopFila, TopRequest, VariacionFila, VariacionRequest, VersionVigente,
 } from "./contracts";
 
 /** Llama una función del esquema ventas y valida su respuesta. */
@@ -49,6 +49,29 @@ export function crearConsultas(rpc: Rpc) {
         p_version: r.version, p_anio: r.periodo.anio, p_mes: r.periodo.mes,
         p_anio_cmp: r.comparar.anio, p_mes_cmp: r.comparar.mes, p_filtros: r.filtros,
       }, Descomposicion);
+    },
+
+    /** G9: variación de venta neta en volumen, precio, mezcla, productos nuevos y descontinuados (S23). */
+    puentePrecioVolumenMezcla(req: z.input<typeof PuenteRequest>) {
+      const r = PuenteRequest.parse(req);
+      return rpc("puente_precio_volumen_mezcla", {
+        p_version: r.version, p_anio: r.periodo.anio, p_mes: r.periodo.mes,
+        p_anio_cmp: r.comparar.anio, p_mes_cmp: r.comparar.mes, p_filtros: r.filtros, p_limite: r.limite,
+      }, Puente);
+    },
+
+    /** G9: enero..mes del periodo contra el mismo tramo del año anterior (S24). */
+    acumuladoAnio(req: z.input<typeof AcumuladoRequest>) {
+      const r = AcumuladoRequest.parse(req);
+      return rpc("acumulado_anio", { p_version: r.version, p_anio: r.periodo.anio, p_mes: r.periodo.mes, p_filtros: r.filtros }, Acumulado);
+    },
+
+    /** G9: rutas cuya variación del mes se sale de su historia reciente (S25). */
+    rutasAtipicas(req: z.input<typeof AtipicasRequest>) {
+      const r = AtipicasRequest.parse(req);
+      return rpc("rutas_atipicas", {
+        p_version: r.version, p_anio: r.periodo.anio, p_mes: r.periodo.mes, p_filtros: r.filtros, p_limite: r.limite,
+      }, RutasAtipicas);
     },
   };
 }

@@ -3,9 +3,10 @@
  * "bloqueo" impide publicar; "revisar" exige que quien publica confirme que lo revisó; "info" solo informa.
  * Umbrales (S18): reemplazo con cambio > 1% en venta neta o filas; mes nuevo con variación > 30% contra el anterior;
  * duplicados > 2% de las filas; el último mes es parcial si llega a menos de 2 días del fin de mes.
+ * Por canal (S20, G9): ver UMBRAL_CANAL y alertasCanal.
  */
-import { conteo, fechaCorta, lempirasCompacto, periodoLargo } from "@/lib/format";
-import type { Alerta, Mes } from "./tipos";
+import { capital, conteo, fechaCorta, lempirasCompacto, periodoLargo } from "@/lib/format";
+import type { Alerta, CanalMes, Mes } from "./tipos";
 
 const clave = (m: { anio: number; mes: number }) => m.anio * 12 + (m.mes - 1);
 const desdeClave = (k: number) => ({ anio: Math.floor(k / 12), mes: (k % 12) + 1 });
@@ -17,7 +18,10 @@ export function esParcial(m: Mes) {
   return Number(m.ultimo_dia.slice(8, 10)) < ultimoDiaDelMes(m) - 2;
 }
 
-export function alertasCarga(carga: Mes[], vigente: Mes[], hoy: string, hojasIgnoradas: string[] = []): Alerta[] {
+/** Venta neta por canal de la carga y de la versión vigente; sin esto no hay alertas por canal. */
+export type CanalesAlertas = { carga: CanalMes[]; vigente: CanalMes[] };
+
+export function alertasCarga(carga: Mes[], vigente: Mes[], hoy: string, hojasIgnoradas: string[] = [], canales?: CanalesAlertas): Alerta[] {
   const a: Alerta[] = [];
   if (!carga.length) return [{ nivel: "bloqueo", texto: "La carga no tiene filas." }];
   if (hojasIgnoradas.length)
@@ -59,6 +63,7 @@ export function alertasCarga(carga: Mes[], vigente: Mes[], hoy: string, hojasIgn
         a.push({ nivel: "revisar", texto: `${nombre} es nuevo y cambia ${pctTxt(dv)} contra ${periodoLargo(previo)} (${lempirasCompacto(m.venta_neta)} contra ${lempirasCompacto(previo.venta_neta)}). Confirma que el archivo esté completo.` });
       else a.push({ nivel: "info", texto: `${nombre} es nuevo: ${lempirasCompacto(m.venta_neta)} en ${conteo(m.filas)} filas${previo ? ` (${pctTxt(dv)} contra ${periodoLargo(previo)})` : ""}.` });
     }
+    if (canales) a.push(...alertasCanal(m, antes, porClave, canales));
     if (m.canales_sin_homologar.length)
       a.push({ nivel: "revisar", texto: `${nombre}: canales sin homologar (${m.canales_sin_homologar.join(", ")}); se mostrarán con su nombre de origen.` });
     if (m.duplicados > m.filas * 0.02)
@@ -75,4 +80,75 @@ export function alertasCarga(carga: Mes[], vigente: Mes[], hoy: string, hojasIgn
   }
   const orden = { bloqueo: 0, revisar: 1, info: 2 };
   return a.sort((x, y) => orden[x.nivel] - orden[y.nivel]);
+}
+
+/**
+ * S20: umbrales de las alertas por canal (canal BIA ya homologado; los canales sin homologar cuentan con su nombre
+ * de origen). Comparan solo meses con los mismos días para no confundir un mes parcial con una caída.
+ */
+export const UMBRAL_CANAL = {
+  /** Mes que reemplaza uno publicado con el mismo último día: cambio por canal mayor a este % frente a lo publicado. */
+  reemplazo: 5,
+  /** Mes nuevo y completo: cambio por canal mayor a este % frente al promedio de los 3 meses anteriores publicados y completos. */
+  promedio: 25,
+  /** Canales chicos: se ignoran si pesan menos de este % de la venta neta del mes, en el archivo y en la referencia. */
+  pesoMinimo: 3,
+} as const;
+
+const pctEntero = (p: number) => `${Math.round(Math.abs(p))} %`;
+
+/** "revisar" cuando un canal cambia bruscamente frente a lo publicado de ese mes o al promedio de los 3 meses anteriores. */
+export function alertasCanal(m: Mes, antes: Mes | undefined, vigente: Map<number, Mes>, canales: CanalesAlertas): Alerta[] {
+  const k = clave(m);
+  const suma = (filas: CanalMes[], meses: number[]) => {
+    const r = new Map<string, number>();
+    for (const f of filas) if (meses.includes(clave(f))) r.set(f.canal, (r.get(f.canal) ?? 0) + Number(f.venta_neta));
+    return r;
+  };
+
+  let referencia: Map<string, number>, totalRef: number, umbral: number;
+  let frente: string, enRef: string, laRef: string;
+  if (antes) {
+    // Si cambian los días (mes que se completa o que pierde días) ya hay una alerta general: por canal no se compara.
+    if (m.ultimo_dia !== antes.ultimo_dia) return [];
+    referencia = suma(canales.vigente, [k]);
+    totalRef = antes.venta_neta;
+    umbral = UMBRAL_CANAL.reemplazo;
+    [frente, enRef, laRef] = ["frente a lo publicado para ese mes", "en lo publicado para ese mes", "lo publicado para ese mes"];
+  } else {
+    // Un mes nuevo parcial todavía no es comparable con meses completos.
+    if (esParcial(m)) return [];
+    const previos = [k - 3, k - 2, k - 1].filter((p) => vigente.has(p) && !esParcial(vigente.get(p)!));
+    if (!previos.length) return [];
+    const n = previos.length;
+    const suma3 = suma(canales.vigente, previos);
+    referencia = new Map([...suma3].map(([c, v]) => [c, v / n]));
+    totalRef = previos.reduce((s, p) => s + vigente.get(p)!.venta_neta, 0) / n;
+    umbral = UMBRAL_CANAL.promedio;
+    const nombres = previos.map((p) => periodoLargo(desdeClave(p)));
+    if (n === 1) [frente, enRef, laRef] = [`frente a ${nombres[0]}`, `en ${nombres[0]}`, nombres[0]];
+    else {
+      const de = n === 3 ? `los 3 meses anteriores` : nombres.join(" y ");
+      [frente, enRef, laRef] = [`frente al promedio de ${de}`, `en ${de}`, `el promedio de ${de}`];
+    }
+  }
+  const actual = suma(canales.carga, [k]);
+  const totalNuevo = m.venta_neta;
+  if (totalNuevo <= 0 || totalRef <= 0) return [];
+
+  const nombre = capital(periodoLargo(m));
+  const salida: { cambio: number; alerta: Alerta }[] = [];
+  for (const canal of new Set([...actual.keys(), ...referencia.keys()])) {
+    const a = actual.get(canal) ?? 0, r = referencia.get(canal) ?? 0;
+    if (Math.max((a / totalNuevo) * 100, (r / totalRef) * 100) < UMBRAL_CANAL.pesoMinimo) continue;
+    let texto: string | null = null;
+    if (r <= 0) texto = `${nombre}: aparece ${canal} con ${lempirasCompacto(a)} (${pctEntero((a / totalNuevo) * 100)} del mes), sin ventas ${enRef}.`;
+    else if (a <= 0) texto = `${nombre}: ${canal} no tiene ventas; ${laRef} era ${lempirasCompacto(r)}.`;
+    else {
+      const p = ((a - r) / r) * 100;
+      if (Math.abs(p) > umbral) texto = `${nombre}: ${canal} ${p > 0 ? "sube" : "baja"} ${pctEntero(p)} ${frente} (${lempirasCompacto(a)} contra ${lempirasCompacto(r)}).`;
+    }
+    if (texto) salida.push({ cambio: Math.abs(a - r), alerta: { nivel: "revisar", texto } });
+  }
+  return salida.sort((x, y) => y.cambio - x.cambio).map((x) => x.alerta);
 }

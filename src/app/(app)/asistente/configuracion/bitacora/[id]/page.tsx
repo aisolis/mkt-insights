@@ -3,7 +3,13 @@ import { notFound } from "next/navigation";
 import { RespuestaVista } from "@/components/asistente/chat";
 import { requerirAdmin } from "@/lib/auth/acceso";
 import { detalleBitacora } from "@/lib/asistente/bitacora-servidor";
-import { ESTADO_TXT, fechaHora, segundos } from "../textos";
+import { usd } from "@/lib/asistente/dinero";
+import { ESTADO_TXT, fechaHora, miles, segundos, VALORACION_TXT } from "../textos";
+
+const MOTIVO_TXT = {
+  tope_gasto: "Automática por reglas: se había llegado al tope de gasto de IA del mes",
+  modelo_no_permitido: "Automática por reglas: el modelo configurado no estaba en la lista de permitidos",
+} as const;
 
 const TIPO_TXT = { instruccion: "Instrucción", definicion: "Definición", bloqueo: "Bloqueo" } as const;
 
@@ -22,8 +28,13 @@ export default async function DetalleBitacora(props: PageProps<"/asistente/confi
     ["Versión", d.version ? `v${d.version}` : "—"],
     ["Contexto", d.contexto || "periodo por defecto"],
     ["Resultado", ESTADO_TXT[d.estado]],
-    ["Redacción", d.modo === "modelo" ? `IA (${d.modelo ?? "modelo"}), cifras verificadas` : d.modo === "determinista" ? "Automática por reglas" : "—"],
+    ["Redacción", d.modo === "modelo" ? `IA (${d.modelo ?? "modelo"}), cifras verificadas`
+      : d.modo === "determinista" ? (d.motivo_automatico ? MOTIVO_TXT[d.motivo_automatico] : "Automática por reglas") : "—"],
     ["Tiempo", d.duracion_ms === null ? "—" : `${segundos(d.duracion_ms / 1000)} s`],
+    ["Costo", d.costo_usd === null ? "—" : `${d.costo_estimado ? "≈ " : ""}${usd(d.costo_usd)}${d.costo_estimado ? " (estimado con los precios del catálogo: OpenRouter no informó el costo)" : ""}`],
+    ["Tokens", d.tokens_entrada === null && d.tokens_salida === null ? "—" : `${miles(d.tokens_entrada ?? 0)} de entrada · ${miles(d.tokens_salida ?? 0)} de salida`],
+    ["Valoración", d.valoracion ? VALORACION_TXT[String(d.valoracion.util) as "true" | "false"] : "Sin valorar"],
+    ...(d.valoracion?.comentario ? [["Comentario", <span key="c" className="whitespace-pre-wrap">{d.valoracion.comentario}</span>] as [string, React.ReactNode]] : []),
   ];
 
   return (
