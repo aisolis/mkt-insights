@@ -1,3 +1,4 @@
+import { requerirAdmin } from "@/lib/auth/acceso";
 import { catalogoModelos, cambiosConfig, leerConfig, type CambioConfig } from "@/lib/asistente/config-servidor";
 import { configModelo, modeloPorDefecto } from "@/lib/asistente/modelo";
 import { configEmbeddings } from "@/lib/conocimiento/embeddings";
@@ -8,6 +9,7 @@ const describir = (c: { usar_ia: boolean; modelo: string | null }) =>
   c.usar_ia ? (c.modelo ?? "modelo por defecto") : "solo análisis automático";
 
 export default async function ConfiguracionModelo() {
+  await requerirAdmin(); // el layout no se vuelve a ejecutar en cada navegación
   const [config, { modelos, error }, cambios] = await Promise.all([leerConfig(), catalogoModelos(), cambiosConfig(8)]);
   const activo = configModelo(config);
   const porDefecto = modeloPorDefecto();
