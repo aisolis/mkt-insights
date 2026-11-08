@@ -8,7 +8,7 @@ import { normalizar } from "./texto";
 import type { Contexto, ReglaAsistente } from "./tipos";
 
 /**
- * Reglas del asistente (G8), administradas por un admin en /asistente/reglas. Las tablas no tienen acceso para
+ * Reglas del asistente (G8), administradas por un admin en /asistente/configuracion/reglas. Las tablas no tienen acceso para
  * anon/authenticated (0011_reglas_asistente.sql): se leen y cambian con service_role. Quien llama a las funciones
  * de administración ya verificó requerirAdmin(); reglasActivas() la llama el asistente, que ya verificó el acceso.
  */

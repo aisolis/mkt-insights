@@ -10,8 +10,7 @@ const NAV = [
   { href: "/asistente", label: "Asistente de IA" },
   { href: "/cargas", label: "Cargas y versiones" },
   { href: "/conocimiento", label: "Conocimiento" },
-  { href: "/asistente/reglas", label: "Reglas del asistente", soloAdmin: true },
-  { href: "/asistente/bitacora", label: "Bitácora del asistente", soloAdmin: true },
+  { href: "/asistente/configuracion", label: "Configuración del asistente", soloAdmin: true },
   { href: "/perfiles", label: "Perfiles y accesos", soloAdmin: true },
 ];
 

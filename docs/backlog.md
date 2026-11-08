@@ -67,3 +67,6 @@
 - [x] La bitácora del asistente la escribe solo el servidor (service_role); el usuario ya no puede insertar filas — `0012_bitacora_servidor.sql`
 - [x] Bitácora del asistente para admin (`/asistente/bitacora`): resumen, filtros por periodo, resultado y persona; detalle con la respuesta que vio la persona y las reglas activas en ese momento
 - [x] Vista en celular: menú desplegable, encabezado compacto, panel de conversaciones como cajón
+- [x] Configuración del asistente (`/asistente/configuracion`, solo admin): pestañas Modelo de IA, Reglas y Bitácora en un solo lugar
+- [x] Elegir el modelo de OpenRouter desde la app (catálogo en vivo, solo modelos con herramientas, precios por millón), apagar la IA, probar un modelo con una pregunta sin guardarlo; historial de cambios — `0013_config_asistente.sql`. `OPENROUTER_MODEL` queda como modelo por defecto
+- [ ] Proyecto alojado: revisar en OpenRouter la política de datos de los proveedores habilitados antes de producción

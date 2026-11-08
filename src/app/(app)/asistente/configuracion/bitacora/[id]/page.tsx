@@ -7,7 +7,7 @@ import { ESTADO_TXT, fechaHora, segundos } from "../textos";
 
 const TIPO_TXT = { instruccion: "Instrucción", definicion: "Definición", bloqueo: "Bloqueo" } as const;
 
-export default async function DetalleBitacora(props: PageProps<"/asistente/bitacora/[id]">) {
+export default async function DetalleBitacora(props: PageProps<"/asistente/configuracion/bitacora/[id]">) {
   await requerirAdmin();
   const { id } = await props.params;
   const n = Number(id);
@@ -29,8 +29,8 @@ export default async function DetalleBitacora(props: PageProps<"/asistente/bitac
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="space-y-2">
-        <Link href="/asistente/bitacora" className="text-xs text-neutral-500 underline-offset-4 hover:underline">← Bitácora del asistente</Link>
-        <h1 className="text-xl font-semibold">{d.pregunta}</h1>
+        <Link href="/asistente/configuracion/bitacora" className="text-xs text-neutral-500 underline-offset-4 hover:underline">← Bitácora</Link>
+        <h2 className="text-lg font-semibold">{d.pregunta}</h2>
       </div>
 
       <section className="border border-neutral-200 bg-white p-4">

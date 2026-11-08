@@ -7,7 +7,7 @@ import { activarRegla, crearRegla, editarRegla, eliminarRegla, type EntradaRegla
 /** `valores`: lo que escribió la persona, para no perderlo si hubo un error (React reinicia el formulario). */
 export type EstadoRegla = { error?: string; ok?: string; valores?: { texto: string; terminos: string } } | null;
 
-const RUTA = "/asistente/reglas";
+const RUTA = "/asistente/configuracion/reglas";
 
 /** Crea (sin id) o edita (con id) una regla. Los términos llegan uno por línea o separados por comas. */
 export async function guardarRegla(_: EstadoRegla, form: FormData): Promise<EstadoRegla> {

@@ -12,9 +12,21 @@ import type { Contexto, Resultado, Turno } from "./tipos";
 
 export type ConfigModelo = { apiKey: string; modelo: string; url?: string; fetch?: typeof fetch };
 
-export function configModelo(): ConfigModelo | null {
+/** Modelo de fábrica (el que pidió BIA para el piloto). */
+export const MODELO_FABRICA = "deepseek/deepseek-v4.1-flash";
+
+/** Modelo por defecto cuando la configuración no elige uno: el del entorno o el de fábrica. */
+export const modeloPorDefecto = () => process.env.OPENROUTER_MODEL?.trim() || MODELO_FABRICA;
+
+/**
+ * Configuración del modelo para una llamada. Sin llave de OpenRouter no hay modelo (modo automático).
+ * `elegida` es la configuración guardada por un admin (G8): puede apagar la IA o elegir otro modelo; si no elige
+ * modelo, se usa el por defecto. La llave nunca sale del entorno del servidor.
+ */
+export function configModelo(elegida?: { usarIa: boolean; modelo: string | null }): ConfigModelo | null {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  return apiKey ? { apiKey, modelo: process.env.OPENROUTER_MODEL?.trim() || "deepseek/deepseek-v4.1-flash" } : null;
+  if (!apiKey || elegida?.usarIa === false) return null;
+  return { apiKey, modelo: elegida?.modelo || modeloPorDefecto() };
 }
 
 type Mensaje =

@@ -2,7 +2,7 @@ import { Chat, type ConversacionInicial, type Sugerencia } from "@/components/as
 import { leerParams, periodoComparado, queryString } from "@/lib/dashboard/params";
 import { describirFiltros, rango } from "@/lib/asistente/texto";
 import { capital } from "@/lib/format";
-import { configModelo } from "@/lib/asistente/modelo";
+import { modeloActivo } from "@/lib/asistente/config-servidor";
 import { cargarTurnos, contextoEnPalabras, listarConversaciones, obtenerConversacion } from "@/lib/asistente/conversaciones";
 import { versionVigente } from "@/lib/semantic/queries";
 import type { VersionVigente } from "@/lib/semantic/contracts";
@@ -57,7 +57,7 @@ export default async function Asistente(props: PageProps<"/asistente">) {
       contextoTxt={`${capital(rango(estado.periodo, cmp))} · ${describirFiltros(estado.filtros, version.metadatos)}`}
       version={version.version}
       inicial={sobre}
-      conModelo={configModelo() !== null}
+      conModelo={(await modeloActivo()) !== null}
       sugerencias={SUGERENCIAS}
       conversaciones={conversaciones}
       abierta={abierta}

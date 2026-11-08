@@ -6,7 +6,7 @@ import {
 } from "@/lib/asistente/conversaciones";
 import { acotarMemoria, memoriaDe } from "@/lib/asistente/memoria";
 import { reglasActivas } from "@/lib/asistente/reglas-servidor";
-import { configModelo } from "@/lib/asistente/modelo";
+import { modeloActivo } from "@/lib/asistente/config-servidor";
 import { responder } from "@/lib/asistente/responder";
 import type { Contexto } from "@/lib/asistente/tipos";
 import { buscarDocumentos } from "@/lib/conocimiento/servidor";
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
   ]);
   const ctx: Contexto = { fuente, version, estado, documentos: buscarDocumentos, memoria: acotarMemoria(memoriaDe(ultimaOk), version.metadatos), reglas };
 
-  const modelo = configModelo();
+  const modelo = await modeloActivo(); // el elegido en Configuración del asistente (o automático)
   const inicio = Date.now();
   const base = {
     usuario_id: usuario.id, conversacion_id: conversacion.id, version: version.version, contexto, pregunta,

@@ -10,7 +10,7 @@ const ETIQUETA_ESTADO: Record<Estado, string> = {
   error: "bg-red-50 text-red-800 border-red-200",
 };
 
-export default async function Bitacora(props: PageProps<"/asistente/bitacora">) {
+export default async function Bitacora(props: PageProps<"/asistente/configuracion/bitacora">) {
   await requerirAdmin();
   const sp = await props.searchParams;
   const f = FiltroBitacora.parse({ estado: sp.estado, dias: sp.dias, usuario: sp.usuario });
@@ -20,14 +20,14 @@ export default async function Bitacora(props: PageProps<"/asistente/bitacora">) 
     const p = new URLSearchParams();
     const v = { estado: f.estado, dias: String(f.dias), usuario: f.usuario, ...cambio };
     for (const [k, x] of Object.entries(v)) if (x) p.set(k, x);
-    return `/asistente/bitacora?${p}`;
+    return `/asistente/configuracion/bitacora?${p}`;
   };
   const pct = (n: number) => (resumen.preguntas ? `${Math.round((n / resumen.preguntas) * 100)}%` : "—");
 
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h1 className="text-xl font-semibold">Bitácora del asistente</h1>
+        <h2 className="text-lg font-semibold">Bitácora</h2>
         <p className="text-sm text-neutral-500">
           Cada pregunta con su respuesta, las reglas activas en ese momento y el tiempo que tardó. Sirve para ver qué pregunta el
           equipo, qué se bloquea y dónde conviene ajustar reglas o el banco de preguntas. No incluye datos de clientes.
@@ -42,7 +42,7 @@ export default async function Bitacora(props: PageProps<"/asistente/bitacora">) 
           <Pastilla activa={!f.estado} href={enlace({ estado: undefined })}>Todos</Pastilla>
           {ESTADOS.map((e) => <Pastilla key={e} activa={f.estado === e} href={enlace({ estado: e })}>{ESTADO_TXT[e]}</Pastilla>)}
         </Filtro>
-        <form className="flex items-center gap-2" action="/asistente/bitacora">
+        <form className="flex items-center gap-2" action="/asistente/configuracion/bitacora">
           <input type="hidden" name="dias" value={f.dias} />
           {f.estado && <input type="hidden" name="estado" value={f.estado} />}
           <label htmlFor="usuario" className="text-xs text-neutral-500">Persona</label>
@@ -85,7 +85,7 @@ export default async function Bitacora(props: PageProps<"/asistente/bitacora">) 
                 <td className="whitespace-nowrap px-3 py-2 text-neutral-600 tabular-nums">{fechaHora(r.creado_en)}</td>
                 <td className="whitespace-nowrap px-3 py-2">{r.usuario}</td>
                 <td className="max-w-md px-3 py-2">
-                  <Link href={`/asistente/bitacora/${r.id}`} className="line-clamp-2 underline-offset-4 hover:underline">{r.pregunta}</Link>
+                  <Link href={`/asistente/configuracion/bitacora/${r.id}`} className="line-clamp-2 underline-offset-4 hover:underline">{r.pregunta}</Link>
                 </td>
                 <td className="whitespace-nowrap px-3 py-2">
                   <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs ${ETIQUETA_ESTADO[r.estado]}`}>{ESTADO_TXT[r.estado]}</span>

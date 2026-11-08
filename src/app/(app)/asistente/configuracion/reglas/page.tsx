@@ -37,7 +37,7 @@ export default async function ReglasAsistente() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h1 className="text-xl font-semibold">Reglas del asistente</h1>
+        <h2 className="text-lg font-semibold">Reglas</h2>
         <p className="text-sm text-neutral-500">
           Indicaciones, definiciones y temas bloqueados que el asistente aplica en cada pregunta, para todas las personas. Un
           cambio se aplica desde la siguiente pregunta.
