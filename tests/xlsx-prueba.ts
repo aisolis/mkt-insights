@@ -3,12 +3,16 @@
  * mensual sin tocar archivos reales.
  */
 import ExcelJS from "exceljs";
-import { COLS } from "@/lib/cargas/ingesta";
+import { ENCABEZADOS_CUBO } from "@/lib/cargas/columnas";
 
 export type FilaPrueba = { fecha: Date; canal: string; ventaNeta: number; kg?: number; duplicar?: boolean };
 
+/** Opciones de formato: encabezados con otro nombre (`renombrar`, por nombre del cubo) y filas de título antes de los
+ * encabezados (`titulo`). */
+export type FormatoPrueba = { renombrar?: Record<string, string>; titulo?: string[][] };
+
 /** `resumen`: agrega antes una hoja con otro formato (como los resúmenes que vienen junto a la exportación). */
-export async function xlsxDePrueba(filas: FilaPrueba[], columnas: readonly string[] = COLS, resumen = false): Promise<Buffer> {
+export async function xlsxDePrueba(filas: FilaPrueba[], columnas: readonly string[] = ENCABEZADOS_CUBO, resumen = false, formato: FormatoPrueba = {}): Promise<Buffer> {
   const libro = new ExcelJS.Workbook();
   if (resumen) {
     const r = libro.addWorksheet("1. Resumen por canal");
@@ -16,7 +20,8 @@ export async function xlsxDePrueba(filas: FilaPrueba[], columnas: readonly strin
     r.addRow([2026, "Mayoreo", 10, 1000]);
   }
   const hoja = libro.addWorksheet("Hoja1");
-  hoja.addRow([...columnas]);
+  for (const t of formato.titulo ?? []) hoja.addRow(t);
+  hoja.addRow(columnas.map((c) => formato.renombrar?.[c] ?? c));
   filas.forEach((f, i) => {
     const valores: Record<string, unknown> = {
       "Fecha": f.fecha, "Ruta": "999 - RUTA DE PRUEBA", "Empresa": "MCM", "Marca": "MARCA PRUEBA", "Café/Rep": "Café", "Proveedor": "PRUEBA",

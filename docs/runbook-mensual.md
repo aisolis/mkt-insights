@@ -9,9 +9,12 @@ Para quien publica los datos cada mes (admin o aprobador en BIA Foresight). Toma
 
 ## 1. Exportar el mes del cubo
 
-Exporta del cubo **solo el mes que cerró**. Mantén las mismas 24 columnas y el mismo orden de siempre:
+Exporta del cubo **solo el mes que cerró**, con las columnas de siempre:
 
 Fecha · Ruta · Empresa · Marca · Café/Rep · Proveedor · Cliente Codigo · Cliente Nombre · Zona · Documento · Año · Mes Nom · Grupo · Canal BIA · ArtCodigo · ArtDescrip · Cantidad · Venta Bruta · Descuentos · Venta Neta · Kg · Fardos/Caja · Subgrupo · Sucursal
+
+- Las columnas se reconocen **por nombre**: el orden no importa, ni las mayúsculas, tildes o signos. Columnas de más se ignoran.
+- Si el cubo cambia el nombre de una columna (por ejemplo, «Café/Rep» pasa a «Datos café»), agrega el nombre nuevo en **Cargas y versiones → Columnas del Excel**. Ahí también se configuran la fila de los encabezados, las hojas que se saltan y qué columnas descriptivas pueden faltar.
 
 - El archivo debe ser `.xlsx` y pesar menos de 50 MB. Un mes son unas 60 mil filas, alrededor de 7 MB.
 - Si necesitas corregir meses anteriores, inclúyelos en el mismo archivo o súbelos en otro. Cada mes que venga en un archivo **reemplaza** lo publicado de ese mes.
@@ -25,7 +28,7 @@ Si sale un error, el mensaje dice la hoja y la fila. Los más comunes:
 
 | Mensaje | Qué hacer |
 |---|---|
-| «la columna N debería ser …» | El archivo no tiene el formato del cubo. Vuelve a exportarlo con las mismas columnas. |
+| «falta la columna de …» o «hay varias columnas de …» | Una columna cambió de nombre, no vino o viene dos veces. El mensaje dice qué nombres se aceptan y qué encabezados trae el archivo. Si solo cambió el nombre, agrégalo en **Columnas del Excel**, prueba el archivo ahí mismo y pulsa **Reintentar**; si falta, vuelve a exportar. |
 | «Este archivo ya se cargó» | Ese mismo archivo ya está en la plataforma. No hace falta subirlo otra vez. |
 | «fecha inválida» o «valor numérico inválido» | Hay una celda con texto donde va una fecha o un número. Corrige la fila indicada y vuelve a exportar. |
 | «No se encontró el archivo subido» | La subida se cortó. Pulsa **Reintentar** o **Descartar** y vuelve a subirlo. |

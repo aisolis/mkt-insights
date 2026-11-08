@@ -74,13 +74,14 @@ export default async function Cargas(props: PageProps<"/cargas">) {
         <section className="space-y-3 border border-neutral-200 bg-white p-4">
           <h2 className="text-sm font-semibold">Carga del mes</h2>
           <ol className="list-decimal space-y-0.5 pl-5 text-sm text-neutral-700">
-            <li>Exporta del cubo el mes cerrado (mismas 24 columnas de siempre) y súbelo aquí.</li>
+            <li>Exporta del cubo el mes cerrado y súbelo aquí. Las columnas se reconocen por nombre (ver <Link href="/cargas/columnas" className="underline">Columnas del Excel</Link>).</li>
             <li>Revisa las alertas: cambios contra lo publicado, saltos raros, canales nuevos.</li>
             <li>Publica. Si algo salió mal, retira la versión y vuelve a regir la anterior.</li>
           </ol>
           <FormCargar />
           <p className="text-xs text-neutral-500">
             ¿Un canal nuevo o escrito distinto? <Link href="/cargas/homologacion" className="underline">Homologación de canales</Link>
+            {" · "}¿Una columna con otro nombre? <Link href="/cargas/columnas" className="underline">Columnas del Excel</Link>
           </p>
         </section>
       )}
@@ -182,7 +183,12 @@ function TarjetaCarga({ c, alertas, meses: m }: { c: FilaCarga; alertas: Alerta[
           {c.estado !== "procesando" && <Descartar id={c.id} />}
         </div>
       </div>
-      {c.error && <p className="text-sm text-red-700">{c.error}</p>}
+      {c.error && <p className="text-sm text-red-700 break-words">{c.error}</p>}
+      {c.error && /columna|encabezado/i.test(c.error) && (
+        <p className="text-xs text-neutral-600">
+          <Link href={`/cargas/columnas?probar=${c.id}#probar`} className="underline">Revisar las columnas de este archivo</Link>
+        </p>
+      )}
       {c.estado === "validada" && (
         <>
           <ul className="space-y-1">

@@ -4,6 +4,7 @@ import { enviarCorreo } from "@/lib/correo";
 import { kpiPeriodo, variacionPorDimension } from "@/lib/semantic/queries";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { alertasCarga } from "./alertas";
+import { camposVacios, type ColumnasHoja } from "./columnas";
 import { canalesParaAlertas, mesesParaAlertas } from "./composicion";
 import { procesarCarga } from "./ingesta";
 import { correoResumen, datosResumen, rutaResumen, type FuenteResumen, type VersionResumen } from "./resumen";
@@ -70,11 +71,12 @@ export async function alertasDe(cargaIds: string[]): Promise<Map<string, Alerta[
   const svc = createServiceClient();
   const [{ porCarga, vigente }, hojas, canales] = await Promise.all([
     mesesParaAlertas(svc, cargaIds),
-    svc.schema("ventas").from("carga").select("id, hojas_ignoradas").in("id", cargaIds),
+    svc.schema("ventas").from("carga").select("id, hojas_ignoradas, columnas").in("id", cargaIds),
     canalesParaAlertas(svc, cargaIds),
   ]);
   const ignoradas = new Map((hojas.data ?? []).map((c) => [c.id as string, (c.hojas_ignoradas ?? []) as string[]]));
-  return new Map(cargaIds.map((id) => [id, alertasCarga(porCarga.get(id) ?? [], vigente, hoyHN(), ignoradas.get(id), canales.get(id))]));
+  const vacios = new Map((hojas.data ?? []).map((c) => [c.id as string, camposVacios(c.columnas as ColumnasHoja[] | null)]));
+  return new Map(cargaIds.map((id) => [id, alertasCarga(porCarga.get(id) ?? [], vigente, hoyHN(), ignoradas.get(id), canales.get(id), vacios.get(id))]));
 }
 
 export const MetaCarga = z.object({

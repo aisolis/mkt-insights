@@ -21,11 +21,14 @@ export function esParcial(m: Mes) {
 /** Venta neta por canal de la carga y de la versión vigente; sin esto no hay alertas por canal. */
 export type CanalesAlertas = { carga: CanalMes[]; vigente: CanalMes[] };
 
-export function alertasCarga(carga: Mes[], vigente: Mes[], hoy: string, hojasIgnoradas: string[] = [], canales?: CanalesAlertas): Alerta[] {
+/** camposVacios: columnas opcionales que el archivo no trae y se cargaron vacías (S26), ya en palabras. */
+export function alertasCarga(carga: Mes[], vigente: Mes[], hoy: string, hojasIgnoradas: string[] = [], canales?: CanalesAlertas, camposVacios: string[] = []): Alerta[] {
   const a: Alerta[] = [];
   if (!carga.length) return [{ nivel: "bloqueo", texto: "La carga no tiene filas." }];
   if (hojasIgnoradas.length)
-    a.push({ nivel: "revisar", texto: `No se cargaron hojas sin el formato del cubo: ${hojasIgnoradas.map((h) => `«${h}»`).join(", ")}. Si alguna tenía ventas línea por línea, expórtala con las 24 columnas.` });
+    a.push({ nivel: "revisar", texto: `No se cargaron hojas sin las columnas configuradas: ${hojasIgnoradas.map((h) => `«${h}»`).join(", ")}. Si alguna tenía ventas línea por línea, revisa sus encabezados en Columnas del Excel.` });
+  if (camposVacios.length)
+    a.push({ nivel: "revisar", texto: `El archivo no trae ${camposVacios.join(", ")}: se cargaron vacías. Si BIA las sigue usando, revisa la exportación o agrega el nombre de la columna en Columnas del Excel.` });
   const nuevos = [...carga].sort((x, y) => clave(x) - clave(y));
   const porClave = new Map(vigente.map((m) => [clave(m), m]));
   const compuesto = new Map([...porClave, ...nuevos.map((m) => [clave(m), m] as const)]);

@@ -60,7 +60,7 @@ export function FormCargar() {
   return (
     <form ref={form} action={enviar} className="flex flex-wrap items-end gap-3">
       <label className="block space-y-1 text-sm">
-        <span className="text-neutral-700">Excel del mes (.xlsx, mismo formato del cubo, máx. 50 MB)</span>
+        <span className="text-neutral-700">Excel del mes (.xlsx, máx. 50 MB)</span>
         <input name="archivo" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required className="block text-sm" />
       </label>
       <Button type="submit" size="lg" disabled={trabajando}>{trabajando ? "Procesando…" : "Subir y validar"}</Button>

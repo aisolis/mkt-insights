@@ -105,3 +105,12 @@
 - [ ] Asistente: pregunta sugerida al llegar desde las secciones nuevas (`?sobre=acumulado|precio|atipicas`) y una línea en las instrucciones del modelo sobre las herramientas nuevas
 - [ ] Confirmar con Nati el umbral de rutas fuera de lo normal (|puntaje| ≥ 3.5, rutas ≥ 0.1 % del promedio) después de revisarlo un par de meses
 - [ ] Proyecto alojado: aplicar `0014_analisis.sql`
+
+## G10 — Ingesta configurable
+- [x] Columnas del Excel (`/cargas/columnas`, admin o aprobador): nombres aceptados por dato, obligatoria o "puede faltar" en los descriptivos, fila de encabezados y hojas que se saltan, con bitácora (S26) — `0019_columnas_carga.sql`
+- [x] Ingesta por nombre de columna (no por posición), con mensajes que dicen qué falta, qué se acepta y qué trae el archivo; cada carga guarda cómo se leyeron sus columnas
+- [x] Probador: lee los encabezados de un archivo ya subido con la configuración de ahora, sin cargar nada, y deja reintentar la carga
+- [x] Alerta "revisar" cuando una columna opcional no vino y se cargó vacía
+- [ ] Equivalencias de valores para más dimensiones (hoy solo canal): grupo, subgrupo y sucursal ya están previstas en `ventas.homologacion`
+- [ ] Formato de números con coma decimal ("1.234,56") si BIA llega a exportar así
+- [ ] Proyecto alojado: aplicar `0019_columnas_carga.sql`

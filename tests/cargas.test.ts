@@ -6,6 +6,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { alertasCarga, esParcial } from "@/lib/cargas/alertas";
+import { camposVacios, ENCABEZADOS_CUBO } from "@/lib/cargas/columnas";
 import { mesesParaAlertas } from "@/lib/cargas/composicion";
 import { procesarCarga } from "@/lib/cargas/ingesta";
 import { BUCKET_CARGAS, MIME_XLSX, type Mes } from "@/lib/cargas/tipos";
@@ -97,7 +98,46 @@ describe.skipIf(!url || !service)("carga mensual contra el Supabase local", () =
   it("rechaza un Excel con columnas distintas y deja la carga con su error", async () => {
     const id = await subir("columnas-malas.xlsx", await xlsxDePrueba([{ fecha: new Date(Date.UTC(2026, 9, 1)), canal, ventaNeta: 1 }], ["Fecha", "Ruta", "Otra"]));
     const r = await procesarCarga(svc, id);
-    expect(r).toMatchObject({ estado: "con_errores", error: expect.stringMatching(/columna 3 debería ser «Empresa» y es «Otra»/) });
+    expect(r).toMatchObject({ estado: "con_errores", error: expect.stringMatching(/falta la columna de empresa \(se acepta como «Empresa»\).*Encabezados del archivo: «Fecha», «Ruta», «Otra»/) });
+  });
+
+  it("columnas configurables: nombre nuevo, otro orden, opcional que falta y fila de encabezados (S26)", { timeout: 60_000 }, async () => {
+    const ventas = svc.schema("ventas");
+    const antes = (await ventas.from("columna_carga").select("campo, encabezados, obligatoria").in("campo", ["categoria", "sucursal"])).data!;
+    const formatoAntes = (await ventas.from("formato_carga").select("fila_encabezado, hojas_excluidas").single()).data!;
+    const ultimoCambio = (await ventas.from("columna_carga_cambio").select("id").order("id", { ascending: false }).limit(1).maybeSingle()).data?.id ?? 0;
+    try {
+      expect((await ventas.rpc("guardar_columna_carga", { p_campo: "categoria", p_encabezados: ["Café/Rep", " Datos café ", "DATOS CAFE", ""], p_obligatoria: true })).data)
+        .toEqual({ accion: "editada", encabezados: ["Café/Rep", "Datos café"] });
+      expect((await ventas.rpc("guardar_columna_carga", { p_campo: "sucursal", p_encabezados: ["Sucursal"], p_obligatoria: false })).error).toBeNull();
+      expect((await ventas.rpc("guardar_formato_carga", { p_fila: 3, p_hojas: ["Desgloce"] })).error).toBeNull();
+      // Un nombre no puede llenar dos campos, y los datos que necesita el dashboard no pueden faltar.
+      expect((await ventas.rpc("guardar_columna_carga", { p_campo: "marca", p_encabezados: ["Marca", "datos-cafe"], p_obligatoria: true })).error?.message)
+        .toMatch(/«Datos café» ya se usa para el campo categoria/);
+      expect((await ventas.rpc("guardar_columna_carga", { p_campo: "venta_neta", p_encabezados: ["Venta Neta"], p_obligatoria: false })).error?.message)
+        .toMatch(/no puede faltar/);
+      expect((await ventas.from("columna_carga_cambio").select("tipo, campo").gt("id", ultimoCambio).order("id")).data)
+        .toEqual([{ tipo: "columna", campo: "categoria" }, { tipo: "columna", campo: "sucursal" }, { tipo: "formato", campo: null }]);
+
+      const columnas = [...ENCABEZADOS_CUBO].reverse().filter((c) => c !== "Sucursal");
+      const archivo = await xlsxDePrueba([{ fecha: new Date(Date.UTC(2026, 9, 2)), canal, ventaNeta: 123 }], columnas, true,
+        { renombrar: { "Café/Rep": "DATOS CAFÉ" }, titulo: [["Ventas BIA — octubre"], []] });
+      const id = await subir("columnas-nuevas.xlsx", archivo);
+      const r = await procesarCarga(svc, id);
+      expect(r).toMatchObject({ estado: "validada", conteo: { cargadas: 1, hojasIgnoradas: ["1. Resumen por canal"] } });
+      const fila = (await ventas.from("hecho").select("categoria, sucursal, venta_neta, canal_origen, fila_origen").eq("carga_id", id).single()).data;
+      expect(fila).toEqual({ categoria: "Café", sucursal: "", venta_neta: 123, canal_origen: canal, fila_origen: 4 });
+      const carga = (await ventas.from("carga").select("columnas").eq("id", id).single()).data!;
+      expect(carga.columnas).toEqual([
+        { hoja: "1. Resumen por canal", ignorada: expect.stringMatching(/no tiene encabezados en la fila 3/) },
+        expect.objectContaining({ hoja: "Hoja1", faltan_opcionales: ["sucursal"], sin_usar: ["Mes Nom", "Año"], campos: expect.objectContaining({ categoria: "DATOS CAFÉ" }) }),
+      ]);
+      expect(camposVacios(carga.columnas)).toEqual(["«Sucursal»"]);
+    } finally {
+      for (const a of antes) await ventas.from("columna_carga").update({ encabezados: a.encabezados, obligatoria: a.obligatoria, actualizada_en: null, actualizada_por: null }).eq("campo", a.campo);
+      await ventas.from("formato_carga").update({ ...formatoAntes, actualizada_en: null, actualizada_por: null }).eq("id", true);
+      await ventas.from("columna_carga_cambio").delete().gt("id", ultimoCambio);
+    }
   });
 
   it("octubre completo: valida, alerta, publica reemplazando solo octubre y se retira", { timeout: 180_000 }, async () => {
