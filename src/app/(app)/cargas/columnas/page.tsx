@@ -50,6 +50,7 @@ export default async function Columnas(props: PageProps<"/cargas/columnas">) {
           <ul className="mt-2 list-disc space-y-1 pl-5">
             <li>Por nombre: no importa el orden ni las mayúsculas, tildes, espacios o signos («Café/Rep» = «CAFE REP»).</li>
             <li>Columnas que no son de ningún dato, como «Año» o «Mes Nom», se ignoran.</li>
+            <li>Las fechas pueden venir como fecha o como número de serie de Excel; los códigos que vienen como número se guardan sin decimales; las cifras aceptan comas de miles.</li>
             <li>Si falta una columna obligatoria, o el mismo nombre viene en dos columnas, la hoja no se carga y el error dice qué trae el archivo.</li>
             <li>Los cambios aplican desde la próxima carga. Lo ya cargado o publicado no cambia; cada carga guarda cómo se leyeron sus columnas.</li>
           </ul>
@@ -94,8 +95,8 @@ export default async function Columnas(props: PageProps<"/cargas/columnas">) {
           <div key={g.titulo} className="space-y-1">
             <h3 className="text-xs font-semibold tracking-wide text-neutral-500 uppercase">{g.titulo}</h3>
             <div className="border border-neutral-200 bg-white">
-              <div aria-hidden className="hidden grid-cols-[minmax(0,14rem)_minmax(0,1fr)_9rem] gap-4 border-b border-neutral-200 px-3 py-2 text-xs text-neutral-500 sm:grid">
-                <span>Dato</span><span>Nombre principal y alternativos</span><span>La columna</span>
+              <div aria-hidden className="hidden grid-cols-[minmax(0,14rem)_minmax(0,1fr)_7rem_auto] gap-x-4 border-b border-neutral-200 px-3 py-2 text-xs text-neutral-500 sm:grid">
+                <span>Dato</span><span>Nombre principal y alternativos</span><span>La columna</span><span className="invisible">Editar</span>
               </div>
               <ul className="divide-y divide-neutral-200">
                 {g.campos.map((campo) => <FilaDato key={campo} c={porCampo.get(campo)!} probarId={archivo ? probar : null} archivo={archivo} />)}
@@ -129,26 +130,27 @@ function FilaDato({ c, probarId, archivo }: { c: ColumnaCarga; probarId: string 
   const [principal, ...alternativos] = c.encabezados;
   const personalizado = principal !== NOMBRE_CUBO[c.campo] || alternativos.length > 0;
   return (
-    <li className="px-3 py-2">
-      <div className="grid gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_9rem] sm:items-baseline">
-        <div className="min-w-0">
-          <span className="text-sm font-medium">{etiqueta}</span>
-          <span className="block text-xs text-neutral-500">{TIPOS[tipo]}</span>
-        </div>
-        <div className="flex min-w-0 flex-wrap items-baseline gap-1.5">
-          <span className="border border-neutral-300 bg-neutral-50 px-1.5 py-0.5 text-xs font-medium break-words">{principal}</span>
-          {alternativos.map((a) => <span key={a} className="px-1 text-xs text-neutral-600 break-words">o «{a}»</span>)}
-          {personalizado && <span className="text-xs text-neutral-400">· cambiado</span>}
-        </div>
-        <div className="text-xs text-neutral-600">
-          {c.obligatoria ? "Obligatoria" : <Badge variant="outline">Puede faltar</Badge>}
-        </div>
-      </div>
-      <details className="mt-1">
-        <summary className="inline-flex min-h-8 cursor-pointer items-center text-xs text-neutral-700 underline underline-offset-2">
-          Editar<span className="sr-only"> {etiqueta}</span>
+    <li>
+      <details className="group">
+        <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 px-3 py-2.5 hover:bg-neutral-50 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_7rem_auto] sm:items-baseline [&::-webkit-details-marker]:hidden">
+          <span className="min-w-0">
+            <span className="text-sm font-medium">{etiqueta}</span>
+            <span className="ml-2 text-xs text-neutral-500">{TIPOS[tipo]}</span>
+          </span>
+          <span className="col-start-1 flex min-w-0 flex-wrap items-baseline gap-1.5 sm:col-start-auto">
+            <span className="border border-neutral-300 bg-neutral-50 px-1.5 py-0.5 text-xs font-medium break-words">{principal}</span>
+            {alternativos.map((a) => <span key={a} className="px-1 text-xs text-neutral-600 break-words">o «{a}»</span>)}
+            {personalizado && <span className="text-xs text-neutral-500">· cambiado</span>}
+          </span>
+          <span className="col-start-1 text-xs text-neutral-600 sm:col-start-auto">
+            {c.obligatoria ? "Obligatoria" : <Badge variant="outline">Puede faltar</Badge>}
+          </span>
+          <span className="col-start-2 row-start-1 text-xs text-neutral-700 underline underline-offset-2 group-open:no-underline sm:col-start-auto sm:row-start-auto">
+            <span className="group-open:hidden">Editar</span><span className="hidden group-open:inline">Cerrar</span>
+            <span className="sr-only"> {etiqueta}</span>
+          </span>
         </summary>
-        <div className="mt-2 space-y-2 bg-neutral-50 p-3">
+        <div className="space-y-2 border-t border-neutral-200 bg-neutral-50 p-3">
           <p className="text-xs text-neutral-500">Nombre interno: <span className="font-mono">{c.campo}</span>{!c.puede_faltar && " · siempre obligatoria: el dashboard y las alertas la necesitan"}</p>
           <FormColumna campo={c.campo} etiqueta={etiqueta} principal={principal} alternativos={alternativos} obligatoria={c.obligatoria}
             puedeFaltar={c.puede_faltar} probarId={probarId} archivo={archivo} />
@@ -190,7 +192,7 @@ function ResultadoPrueba({ prueba, mapeo }: { prueba: Prueba; mapeo: MapeoCarga 
           {cargables.length
             ? `con la configuración de ahora se ${cargables.length === 1 ? "cargaría" : "cargarían"} ${hojas(cargables.length)} (${lista(cargables.map((h) => h.hoja))}).`
             : "con la configuración de ahora no se cargaría ninguna hoja."}
-          {reintentable && (cargables.length ? " Esta carga no se procesó: reinténtala con estas columnas." : " Arregla los datos que faltan abajo y vuelve a probar.")}
+          {reintentable && (cargables.length ? " Esta carga no se procesó: reinténtala con estas columnas." : " Arregla abajo los datos que faltan; la prueba se repite sola.")}
           {!reintentable && " Esta carga ya se procesó; la prueba solo muestra cómo se leería hoy."}
         </p>
         {reintentable && cargables.length > 0 && <Reintentar id={carga.id} />}

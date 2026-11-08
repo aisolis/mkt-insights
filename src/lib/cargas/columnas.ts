@@ -36,11 +36,11 @@ export type Campo = keyof typeof CAMPOS;
 export const esCampo = (c: string): c is Campo => Object.hasOwn(CAMPOS, c);
 
 export const TIPOS: Record<TipoCampo, string> = {
-  fecha: "fecha (o número de serie de Excel)",
+  fecha: "fecha",
   texto: "texto",
-  codigo: "código (un número se guarda sin decimales)",
-  numero: "número (acepta comas de miles)",
-  numero_opcional: "número; se aceptan celdas vacías",
+  codigo: "código",
+  numero: "número",
+  numero_opcional: "número, admite celdas vacías",
 };
 
 /** Encabezados de la exportación del cubo (el formato de siempre): los que trae la configuración inicial. */

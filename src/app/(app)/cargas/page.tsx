@@ -190,6 +190,33 @@ function TarjetaVersion({ v, vigente, gestor, retirable }: { v: Version; vigente
   );
 }
 
+/**
+ * El error de columnas trae la lista completa de encabezados del archivo y un consejo: en la tarjeta va solo qué falta,
+ * con el arreglo a un clic; los encabezados quedan plegados para quien los quiera comparar.
+ */
+function ErrorCarga({ id, error }: { id: string; error: string }) {
+  const [titulo, resto] = error.split(" Encabezados del archivo: ");
+  const encabezados = resto?.replace(/\. Si la columna cambió de nombre.*$/, "").replace(/\.$/, "");
+  const deColumnas = /columna|encabezado/i.test(error);
+  return (
+    <div className="space-y-2">
+      <p role="alert" className="max-w-prose text-sm text-red-700 break-words">{encabezados ? titulo : error}</p>
+      {deColumnas && (
+        <Link href={`/cargas/columnas?probar=${id}#probar`}
+          className="inline-flex min-h-8 items-center border border-neutral-300 bg-white px-3 py-1 text-sm font-medium text-neutral-900 hover:bg-neutral-50">
+          Arreglar las columnas de este archivo
+        </Link>
+      )}
+      {encabezados && (
+        <details className="max-w-prose text-xs text-neutral-600">
+          <summary className="inline-flex min-h-8 cursor-pointer items-center underline underline-offset-2">Ver los encabezados que trae el archivo</summary>
+          <p className="break-words">{encabezados}.</p>
+        </details>
+      )}
+    </div>
+  );
+}
+
 const TONO: Record<Alerta["nivel"], string> = {
   bloqueo: "border-red-300 bg-red-50 text-red-900",
   revisar: "border-amber-300 bg-amber-50 text-amber-900",
@@ -220,14 +247,7 @@ function TarjetaCarga({ c, alertas, meses: m, siguiente, mesesVigente }: { c: Fi
           {c.estado !== "procesando" && <Descartar id={c.id} />}
         </div>
       </div>
-      {c.error && <p role="alert" className="max-w-prose text-sm text-red-700 break-words">{c.error}</p>}
-      {c.error && /columna|encabezado/i.test(c.error) && (
-        <p className="text-xs text-neutral-600">
-          <Link href={`/cargas/columnas?probar=${c.id}#probar`} className="inline-flex h-8 items-center border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50">
-            Arreglar las columnas de este archivo
-          </Link>
-        </p>
-      )}
+      {c.error && <ErrorCarga id={c.id} error={c.error} />}
       {c.estado === "validada" && (
         <>
           <ul className="space-y-1">
