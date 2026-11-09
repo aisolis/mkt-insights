@@ -1,9 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { describirEvento, eventosRecientes, TIPO_EVENTO, type TipoEvento } from "@/lib/auditoria";
 import { listarUsuarios, type FilaUsuario } from "@/lib/auth/admin";
 import { requerirAdmin } from "@/lib/auth/acceso";
 import { NIVEL_TXT } from "@/lib/auth/reglas";
-import { fechaLocal } from "@/lib/format";
+import { fechaHoraLocal, fechaLocal } from "@/lib/format";
 import { AccionUsuario, FormInvitar } from "./formularios";
 
 const ESTADO: Record<FilaUsuario["estado"], { txt: string; variante: "default" | "secondary" | "outline" | "destructive" }> = {
@@ -13,9 +14,11 @@ const ESTADO: Record<FilaUsuario["estado"], { txt: string; variante: "default" |
   inactivo: { txt: "Desactivado", variante: "destructive" },
 };
 
-export default async function Perfiles() {
+export default async function Perfiles(props: PageProps<"/perfiles">) {
   const admin = await requerirAdmin();
-  const usuarios = await listarUsuarios();
+  const sp = await props.searchParams;
+  const tipo = typeof sp.evento === "string" && sp.evento in TIPO_EVENTO ? (sp.evento as TipoEvento) : undefined;
+  const [usuarios, eventos] = await Promise.all([listarUsuarios(), eventosRecientes(200, tipo)]);
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -76,6 +79,36 @@ export default async function Perfiles() {
             })}
           </TableBody>
         </Table>
+      </section>
+      <section id="actividad" className="space-y-3 border border-neutral-200 bg-white p-4">
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold">Actividad: entradas y exportaciones</h2>
+          <p className="max-w-prose text-sm text-neutral-500">
+            Quién entró, salió, exportó o abrió un documento, y qué exportó (sin el contenido: los clientes no quedan aquí). Las preguntas al asistente
+            están en su propia bitácora.
+          </p>
+        </div>
+        <nav aria-label="Filtrar actividad" className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+          <a href="/perfiles#actividad" aria-current={!tipo ? "page" : undefined} className={!tipo ? "font-semibold" : "underline underline-offset-2"}>Todo</a>
+          {(Object.keys(TIPO_EVENTO) as TipoEvento[]).map((t) => (
+            <a key={t} href={`/perfiles?evento=${t}#actividad`} aria-current={tipo === t ? "page" : undefined}
+              className={tipo === t ? "font-semibold" : "underline underline-offset-2"}>{TIPO_EVENTO[t]}</a>
+          ))}
+        </nav>
+        {eventos.length === 0 ? (
+          <p className="text-sm text-neutral-500">Sin actividad registrada{tipo ? " de este tipo" : ""}.</p>
+        ) : (
+          <ul className="max-h-96 divide-y divide-neutral-100 overflow-y-auto text-sm">
+            {eventos.map((e) => (
+              <li key={e.id} className="flex flex-wrap gap-x-2 py-1">
+                <span className="text-neutral-500 tabular-nums">{fechaHoraLocal(e.creado_en)}</span>
+                <span className="font-medium">{e.usuario ?? "Alguien"}</span>
+                <span>{TIPO_EVENTO[e.tipo].toLowerCase()}</span>
+                {describirEvento(e) && <span className="min-w-0 break-words text-neutral-600">{describirEvento(e)}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );

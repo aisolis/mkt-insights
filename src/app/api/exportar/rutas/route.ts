@@ -1,3 +1,4 @@
+import { registrarEvento } from "@/lib/auditoria";
 import { accesoApi } from "@/lib/auth/acceso";
 import { leerParams, periodoComparado } from "@/lib/dashboard/params";
 import { topContribuyentes, versionVigente } from "@/lib/semantic/queries";
@@ -24,6 +25,7 @@ export async function GET(request: Request) {
     filtros, `v${version.version}`, version.fecha_corte, version.conciliada_bi ? "si" : "no"].map(csv).join(","));
 
   const nombre = `rutas-variacion-${p(estado.periodo)}-vs-${p(cmp)}-v${version.version}.csv`;
+  await registrarEvento(usuario.id, "exportacion", { que: "rutas que más contribuyen (CSV)", periodo: p(estado.periodo), comparado: p(cmp), filtros, version: version.version, filas: filas.length });
   // BOM para que Excel abra el UTF-8 con tildes correctamente.
   return new Response("﻿" + [cab.join(","), ...lineas].join("\r\n"), {
     headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${nombre}"` },

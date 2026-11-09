@@ -39,6 +39,12 @@ export async function urlDocumento(id: string): Promise<string | null> {
   return firmada.data?.signedUrl ?? null;
 }
 
+/** Título y audiencia de un documento, para la bitácora (después de que urlDocumento comprobó que la persona lo ve). */
+export async function datosDocumento(id: string): Promise<{ titulo?: string; audiencia?: string }> {
+  const { data } = await createServiceClient().schema("conocimiento").from("documento").select("titulo, audiencia").eq("id", id).maybeSingle();
+  return data ?? {};
+}
+
 // Administración (service_role). Las llaman server actions que ya verificaron requerirAdmin(). ------------------
 
 export const MetaDocumento = z.object({

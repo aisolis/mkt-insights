@@ -1,3 +1,4 @@
+import { registrarEvento } from "@/lib/auditoria";
 import { accesoApiPlus } from "@/lib/auth/acceso";
 import { leerParams, periodoComparado } from "@/lib/dashboard/params";
 import { consultasClientesSesion, ESTADOS_CLIENTE, leerEstadoCliente } from "@/lib/semantic/clientes";
@@ -30,6 +31,8 @@ export async function GET(request: Request) {
     filtros, `v${version.version}`, version.fecha_corte, version.conciliada_bi ? "si" : "no"].map(csv).join(","));
 
   const nombre = `clientes-${ver.replace("_", "-")}-${p(estado.periodo)}-vs-${p(cmp)}-v${version.version}.csv`;
+  // Qué se exportó, no a quién: los clientes no van a la bitácora.
+  await registrarEvento(usuario.id, "exportacion", { que: `clientes ${titulo} (CSV, Plus)`, periodo: p(estado.periodo), comparado: p(cmp), filtros, version: version.version, filas: lista.filas.length });
   // BOM para que Excel abra el UTF-8 con tildes correctamente. Sin caché: es detalle por cliente.
   return new Response("﻿" + [cab.join(","), ...lineas].join("\r\n"), {
     headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${nombre}"`, "Cache-Control": "private, no-store" },

@@ -8,7 +8,7 @@ import type { ControlBi } from "@/lib/cargas/control-bi";
 import { cargaDeVersion, controlesDe } from "@/lib/cargas/control-servidor";
 import { alertasDe, aprobacionesDe, cuarentenaDe, listarCargas, mesesDeCargas, versiones, type FilaCuarentena } from "@/lib/cargas/servidor";
 import { LATIDO_VENCIDO_MS, type Alerta, type Aprobacion, type FilaCarga, type Mes, type RolPaso, type Version } from "@/lib/cargas/tipos";
-import { conteo, fechaCorta, fechaLocal, periodoCorto, periodoLargo } from "@/lib/format";
+import { conteo, fechaCorta, fechaHoraLocal, fechaLocal, periodoCorto, periodoLargo } from "@/lib/format";
 import { SeccionControl } from "./control";
 import { AnularAprobacion, Descartar, FormAprobar, FormCargar, FormPublicar, FormRetirar, Refrescar, Reintentar } from "./formularios";
 
@@ -248,7 +248,7 @@ function Proceso({ c }: { c: FilaCarga }) {
   if (detenida(c)) {
     return (
       <p role="status" className="max-w-prose text-sm text-amber-900">
-        El proceso se detuvo{c.latido_en ? ` (última señal ${fechaLocal(c.latido_en)})` : ""}: pulsa Reintentar. Empieza de cero y no duplica filas.
+        El proceso se detuvo{c.latido_en ? ` (última señal ${fechaHoraLocal(c.latido_en)})` : ""}: pulsa Reintentar. Empieza de cero y no duplica filas.
       </p>
     );
   }
@@ -256,7 +256,7 @@ function Proceso({ c }: { c: FilaCarga }) {
     <p role="status" aria-live="polite" className="text-sm text-neutral-700">
       {c.etapa ? c.etapa.charAt(0).toUpperCase() + c.etapa.slice(1) : "En cola"}
       {c.avance_filas ? ` · ${conteo(c.avance_filas)} filas cargadas` : ""}
-      {c.procesando_desde && ` · desde ${fechaLocal(c.procesando_desde)}`}
+      {c.procesando_desde && ` · desde ${fechaHoraLocal(c.procesando_desde)}`}
       {". Se actualiza solo; puedes cerrar la página."}
     </p>
   );
@@ -340,7 +340,7 @@ function TarjetaCarga({ c, alertas, meses: m, siguiente, mesesVigente, aprobacio
             <>
               <div role="status" className="space-y-1 border-t border-neutral-200 pt-4 text-sm">
                 <p>
-                  <span className="font-semibold">1. Aprobada</span> por {quien(aprobacion.usuario, aprobacion.rol)} el {fechaLocal(aprobacion.creado_en)}
+                  <span className="font-semibold">1. Aprobada</span> por {quien(aprobacion.usuario, aprobacion.rol)} el {fechaHoraLocal(aprobacion.creado_en)}
                   {" · "}{periodoLargo(ultimo)} {aprobacion.ultimo_mes_cerrado ? "completo" : "parcial"}
                 </p>
                 {aprobacion.motivo && (

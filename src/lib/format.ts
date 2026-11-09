@@ -27,6 +27,10 @@ export function fechaLocal(instante: string) {
   return fechaCorta(DIA_HN.format(new Date(instante)));
 }
 
+const HORA_HN = new Intl.DateTimeFormat("es-HN", { timeZone: "America/Tegucigalpa", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+/** Fecha y hora de un instante en hora de Honduras: "08-nov-2026 14:05" (bitácoras). */
+export const fechaHoraLocal = (instante: string) => `${fechaLocal(instante)} ${HORA_HN.format(new Date(instante))}`;
+
 /** Lempiras compactos: "L 140.2 M", "L 763", "−L 8.4 M". */
 export function lempirasCompacto(v: number) {
   const s = v < 0 ? "−" : "";

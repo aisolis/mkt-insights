@@ -1,9 +1,8 @@
 import { mesesSinCubrir, type ControlBi } from "@/lib/cargas/control-bi";
-import { fechaCorta, fechaLocal } from "@/lib/format";
+import { fechaCorta, fechaHoraLocal, lempiras } from "@/lib/format";
 import { FormControl } from "./formularios";
 
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-const lps = (n: number) => `L ${n.toLocaleString("es-HN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const kgs = (n: number, d: number) => n.toLocaleString("es-HN", { minimumFractionDigits: d, maximumFractionDigits: d });
 
 /**
@@ -32,7 +31,7 @@ export function SeccionControl({ cargaId, control, titulo }: { cargaId: string; 
             {" · "}{[conVenta && "venta neta al centavo", conKg && `kg con ${control.decimales_kg} decimales`].filter(Boolean).join(", ")}
           </p>
           <p className="text-xs text-neutral-600">
-            «{control.nombre_archivo}» de {control.custodio}, corte {fechaCorta(control.fecha_corte)} · subido por {control.subido_por ?? "alguien"} el {fechaLocal(control.creado_en)}
+            «{control.nombre_archivo}» de {control.custodio}, corte {fechaCorta(control.fecha_corte)} · subido por {control.subido_por ?? "alguien"} el {fechaHoraLocal(control.creado_en)}
             {control.nota && ` · ${control.nota}`}
           </p>
           {faltan.length > 0 && <p className="text-sm text-amber-900">Meses: {faltan.join("; ")}.</p>}
@@ -56,10 +55,10 @@ export function SeccionControl({ cargaId, control, titulo }: { cargaId: string; 
                       {control.nivel.includes("empresa") && <td className="px-2 py-1">{d.empresa}</td>}
                       {control.nivel.includes("canal") && <td className="px-2 py-1">{d.canal}</td>}
                       {conVenta && <>
-                        <td className="px-2 py-1 text-right">{lps(Number(d.venta_foresight))}</td>
-                        <td className="px-2 py-1 text-right">{lps(Number(d.venta_bi))}</td>
+                        <td className="px-2 py-1 text-right">{lempiras(Number(d.venta_foresight))}</td>
+                        <td className="px-2 py-1 text-right">{lempiras(Number(d.venta_bi))}</td>
                         <td className={`px-2 py-1 text-right ${Number(d.venta_foresight) !== Number(d.venta_bi) ? "font-medium text-red-700" : "text-neutral-400"}`}>
-                          {lps(Number(d.venta_foresight) - Number(d.venta_bi))}
+                          {lempiras(Number(d.venta_foresight) - Number(d.venta_bi))}
                         </td>
                       </>}
                       {conKg && <>

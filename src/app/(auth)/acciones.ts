@@ -1,6 +1,7 @@
 "use server";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { registrarEvento } from "@/lib/auditoria";
 import { rutaSegura } from "@/lib/auth/reglas";
 import { createClient } from "@/lib/supabase/server";
 
@@ -86,12 +87,20 @@ export async function verificarTotp(_: EstadoForm, form: FormData): Promise<Esta
   }
   if (!factorId) return { error: "No hay un factor configurado." };
   const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code: codigo });
-  if (error) return { error: "Código incorrecto o vencido. Revisa la hora de tu teléfono y vuelve a intentar." };
+  const { data: sesion } = await supabase.auth.getClaims();
+  const quien = (sesion?.claims?.sub as string | undefined) ?? null;
+  if (error) {
+    await registrarEvento(quien, "codigo_fallido"); // V1-20: la cuenta existe y pasó la clave; el código no
+    return { error: "Código incorrecto o vencido. Revisa la hora de tu teléfono y vuelve a intentar." };
+  }
+  await registrarEvento(quien, "ingreso");
   redirect(rutaSegura(form.get("siguiente")));
 }
 
 export async function salir() {
   const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  if (data?.claims?.sub) await registrarEvento(data.claims.sub as string, "salida");
   await supabase.auth.signOut();
   redirect("/login?aviso=salida");
 }
