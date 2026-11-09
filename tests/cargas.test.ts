@@ -65,6 +65,7 @@ const opciones = { auth: { persistSession: false, autoRefreshToken: false } };
 describe.skipIf(!url || !service)("carga mensual contra el Supabase local", () => {
   let svc: SupabaseClient;
   let canal = "";
+  let canalBia = "";
   let vigenteAntes = 0;
   const cargas: string[] = [], versiones: number[] = [];
   const kpi = async (version: number, anio: number, m: number) =>
@@ -82,8 +83,9 @@ describe.skipIf(!url || !service)("carga mensual contra el Supabase local", () =
 
   beforeAll(async () => {
     svc = createClient(url!, service!, opciones);
-    const h = await svc.schema("ventas").from("homologacion").select("valor_origen").eq("dimension", "canal").limit(1).single();
+    const h = await svc.schema("ventas").from("homologacion").select("valor_origen, valor_homologado").eq("dimension", "canal").limit(1).single();
     canal = h.data!.valor_origen;
+    canalBia = h.data!.valor_homologado;
     vigenteAntes = (await svc.schema("ventas").rpc("version_vigente")).data.version;
   });
 
@@ -171,7 +173,18 @@ describe.skipIf(!url || !service)("carga mensual contra el Supabase local", () =
     const sinMotivo = await svc.schema("ventas").rpc("aprobar_carga", { p_carga: id, p_usuario: null, p_rol: "servicio", p_ultimo_mes_cerrado: true, p_alertas: ["x"], p_motivo: "corto" });
     expect(sinMotivo.error?.message).toMatch(/motivo/);
     expect((await aprobarCon("huella-vieja")).error?.message).toMatch(/cambió mientras se revisaba/);
+    // Control de BI (V1-06): uno con un centavo de diferencia no coincide; el exacto sí, y cambia la huella.
+    const huellaSinControl = (await svc.schema("ventas").rpc("huella_carga", { p_carga: id })).data as string;
+    const control = (venta: number) => svc.schema("ventas").rpc("guardar_control", {
+      p_carga: id, p_usuario: null, p_filas: [{ anio: 2026, mes: 10, canal: canalBia.toUpperCase(), venta_neta: venta }],
+      p_meta: { nombre_archivo: "bi-octubre.csv", ruta_archivo: "pruebas/bi.csv", sha256: "x", custodio: "BI prueba", fecha_corte: "2026-10-28", nivel: ["canal"], medidas: ["venta_neta"] },
+    });
+    const c1 = await control(42500.01);
+    expect((await svc.schema("ventas").rpc("comparar_control", { p_control: c1.data })).data).toMatchObject({ coincide: false, total_diferencias: 1 });
+    const c2 = await control(42500);
+    expect((await svc.schema("ventas").rpc("comparar_control", { p_control: c2.data })).data).toMatchObject({ coincide: true, cifras: 1 });
     const huella = (await svc.schema("ventas").rpc("huella_carga", { p_carga: id })).data as string;
+    expect(huella).not.toBe(huellaSinControl);
     expect((await aprobarCon(huella)).error).toBeNull();
     const ap = (await svc.schema("ventas").rpc("aprobaciones", { p_cargas: [id] })).data;
     expect(ap).toEqual([expect.objectContaining({ carga_id: id, rol: "servicio", al_dia: true, alertas: [alertas[0].texto] })]);
@@ -191,6 +204,10 @@ describe.skipIf(!url || !service)("carga mensual contra el Supabase local", () =
     const fila = (await svc.schema("ventas").from("publicacion").select("aprobacion_id, rol_publicacion, ultimo_mes_cerrado").eq("version", v).single()).data;
     expect(fila?.aprobacion_id).toBeGreaterThan(ap[0].id); // la segunda aprobación, tras invalidar la primera
     expect(fila).toMatchObject({ rol_publicacion: "servicio", ultimo_mes_cerrado: true });
+    // Coincide y el mes se aprobó completo: la base la deja conciliada contra ese control, sin nota a mano.
+    expect(pub.data.conciliada_bi).toBe(true);
+    const sello = (await svc.schema("ventas").from("publicacion").select("conciliada_bi, conciliada_nota, control_bi_id").eq("version", v).single()).data;
+    expect(sello).toMatchObject({ conciliada_bi: true, control_bi_id: c2.data, conciliada_nota: expect.stringMatching(/^Control de BI «bi-octubre.csv» de BI prueba, corte 28-10-2026: 1 cifras iguales \(2026-10 por canal; venta neta\)$/) });
     expect(vig.metadatos.periodos.at(-1)).toMatchObject({ anio: 2026, mes: 10, cerrado: true });
     expect((await kpi(v, 2026, 10)).venta_neta).toBe(42500);
     // Los demás meses no cambian (rutas_total sí: es de la versión y octubre trae otras rutas).

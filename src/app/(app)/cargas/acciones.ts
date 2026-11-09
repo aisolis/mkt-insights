@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requerirGestorCargas } from "@/lib/auth/acceso";
 import { rolGestion } from "@/lib/auth/reglas";
-import { anularAprobacion, aprobar, conciliar, descartar, enviarResumenPublicado, MetaCarga, prepararCarga, publicar, retirar, type SubidaCarga } from "@/lib/cargas/servidor";
+import { subirControl } from "@/lib/cargas/control-servidor";
+import { anularAprobacion, aprobar, descartar, enviarResumenPublicado, MetaCarga, prepararCarga, publicar, retirar, type SubidaCarga } from "@/lib/cargas/servidor";
 
 export type Estado = { error?: string; ok?: string } | null;
 
@@ -70,13 +71,29 @@ export async function retirarVersion(_: Estado, form: FormData): Promise<Estado>
   return listo(await retirar(version.data, motivo, usuario.id), `Se retiró la v${version.data}.`);
 }
 
-export async function conciliarVersion(_: Estado, form: FormData): Promise<Estado> {
+const DatosControl = z.object({
+  custodio: z.string().trim().min(3, "Indica quién en BI generó el reporte.").max(120),
+  fecha_corte: z.iso.date("Indica la fecha de corte del reporte de BI."),
+  nota: z.string().trim().max(300).transform((s) => s || null),
+  decimales_kg: z.coerce.number().int().min(0).max(4),
+});
+
+/** Sube el reporte de BI de una carga (lista para publicar o la de la versión vigente) y lo compara (V1-06). */
+export async function subirControlAccion(_: Estado, form: FormData): Promise<Estado> {
   const usuario = await requerirGestorCargas();
-  const version = z.coerce.number().int().positive().safeParse(form.get("version"));
-  const nota = String(form.get("nota") ?? "").trim();
-  if (!version.success) return { error: "Versión no válida." };
-  if (nota.length < 10) return { error: "Indica contra qué reporte de BI se comparó (periodo, cifras revisadas)." };
-  return listo(await conciliar(version.data, nota, usuario.id), `La v${version.data} quedó conciliada con BI.`);
+  const id = z.uuid().safeParse(form.get("carga"));
+  if (!id.success) return { error: "Carga no válida." };
+  const archivo = form.get("archivo");
+  if (!(archivo instanceof File) || !archivo.size) return { error: "Elige el reporte de BI (.xlsx o .csv)." };
+  const datos = DatosControl.safeParse({
+    custodio: form.get("custodio") ?? "", fecha_corte: form.get("fecha_corte") ?? "", nota: form.get("nota") ?? "", decimales_kg: form.get("decimales_kg") ?? 2,
+  });
+  if (!datos.success) return { error: datos.error.issues[0].message };
+  const r = await subirControl(id.data, archivo, datos.data, usuario.id);
+  if (r.error) return { error: r.error };
+  revalidatePath("/cargas");
+  revalidatePath("/", "layout");
+  return { ok: r.ok };
 }
 
 export async function descartarCarga(_: Estado, form: FormData): Promise<Estado> {

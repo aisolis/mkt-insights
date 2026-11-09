@@ -121,6 +121,9 @@
 
 ## G11 — Brechas del checklist de capacidades V1 (solo código)
 - [x] Aprobar y publicar por separado (V1-07, S27): aprobación con huella de la carga, alertas aceptadas con motivo, rol de cada paso; la aprobación vence si la carga cambia; quitar la aprobación con motivo — `0020_aprobacion.sql`
-- [ ] Proyecto alojado: aplicar `0020_aprobacion.sql`
+- [x] Control de BI (V1-06, S28): subir el reporte de BI (.xlsx/.csv), guardar el original con su huella, custodio y corte, comparar al nivel del reporte y mostrar cada diferencia; «conciliada con BI» solo si coincide y el mes es completo; sin nota a mano — `0021_control_bi.sql`
+- [ ] Proyecto alojado: aplicar `0020_aprobacion.sql` y `0021_control_bi.sql` (crea el bucket `controles-bi`)
+- [ ] Confirmar con BI (Q09) la regla de precisión y el formato de su reporte; probar con un reporte real
+- [ ] ¿Exigir control de BI que coincida para publicar? Hoy se puede publicar sin conciliar, con motivo
 - [ ] Decidir con BIA (Q15) si quien aprueba puede publicar la misma carga
 

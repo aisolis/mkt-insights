@@ -5,6 +5,8 @@ import { kpiPeriodo, variacionPorDimension } from "@/lib/semantic/queries";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { alertasCarga } from "./alertas";
 import { camposVacios, type ColumnasHoja } from "./columnas";
+import { alertaControl } from "./control-bi";
+import { controlesDe } from "./control-servidor";
 import { canalesParaAlertas, mesesParaAlertas } from "./composicion";
 import { procesarCarga } from "./ingesta";
 import { correoResumen, datosResumen, rutaResumen, type FuenteResumen, type VersionResumen } from "./resumen";
@@ -69,14 +71,19 @@ export async function mesesDeCargas(cargaIds: string[]) {
 
 export async function alertasDe(cargaIds: string[]): Promise<Map<string, Alerta[]>> {
   const svc = createServiceClient();
-  const [{ porCarga, vigente }, hojas, canales] = await Promise.all([
+  const [{ porCarga, vigente }, hojas, canales, controles] = await Promise.all([
     mesesParaAlertas(svc, cargaIds),
     svc.schema("ventas").from("carga").select("id, hojas_ignoradas, columnas").in("id", cargaIds),
     canalesParaAlertas(svc, cargaIds),
+    controlesDe(cargaIds),
   ]);
   const ignoradas = new Map((hojas.data ?? []).map((c) => [c.id as string, (c.hojas_ignoradas ?? []) as string[]]));
   const vacios = new Map((hojas.data ?? []).map((c) => [c.id as string, camposVacios(c.columnas as ColumnasHoja[] | null)]));
-  return new Map(cargaIds.map((id) => [id, alertasCarga(porCarga.get(id) ?? [], vigente, hoyHN(), ignoradas.get(id), canales.get(id), vacios.get(id))]));
+  // El control de BI (V1-06) va como una alerta más: sin control o sin coincidir, aprobar pide el motivo.
+  return new Map(cargaIds.map((id) => [id, [
+    ...alertasCarga(porCarga.get(id) ?? [], vigente, hoyHN(), ignoradas.get(id), canales.get(id), vacios.get(id)),
+    alertaControl(controles.get(id)),
+  ]]));
 }
 
 export const MetaCarga = z.object({
@@ -146,11 +153,6 @@ const mensajeBase = (m: string) => (m.charAt(0).toUpperCase() + m.slice(1)).repl
 export async function retirar(version: number, motivo: string, usuario: string): Promise<{ error?: string }> {
   const { error } = await createServiceClient().schema("ventas").rpc("retirar_version", { p_version: version, p_motivo: motivo, p_usuario: usuario });
   return error ? { error: error.message.replace(/^.*?: /, "") } : {};
-}
-
-export async function conciliar(version: number, nota: string, usuario: string): Promise<{ error?: string }> {
-  const { error } = await createServiceClient().schema("ventas").rpc("marcar_conciliada", { p_version: version, p_nota: nota, p_usuario: usuario });
-  return error ? { error: error.message } : {};
 }
 
 /** Descarta una carga que no se publicó: borra sus filas y el archivo. */

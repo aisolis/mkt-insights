@@ -4,10 +4,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { requerirAcceso } from "@/lib/auth/acceso";
 import { gestionaCargas } from "@/lib/auth/reglas";
 import { esParcial } from "@/lib/cargas/alertas";
+import type { ControlBi } from "@/lib/cargas/control-bi";
+import { cargaDeVersion, controlesDe } from "@/lib/cargas/control-servidor";
 import { alertasDe, aprobacionesDe, listarCargas, mesesDeCargas, versiones } from "@/lib/cargas/servidor";
 import type { Alerta, Aprobacion, FilaCarga, Mes, RolPaso, Version } from "@/lib/cargas/tipos";
 import { conteo, fechaCorta, fechaLocal, periodoCorto, periodoLargo } from "@/lib/format";
-import { AnularAprobacion, Descartar, FormAprobar, FormCargar, FormConciliar, FormPublicar, FormRetirar, Reintentar } from "./formularios";
+import { SeccionControl } from "./control";
+import { AnularAprobacion, Descartar, FormAprobar, FormCargar, FormPublicar, FormRetirar, Reintentar } from "./formularios";
 
 /** Publicar recalcula los metadatos de la versión sobre todo el cubo (~15 s con 1 M de filas). */
 export const maxDuration = 300;
@@ -44,10 +47,13 @@ export default async function Cargas(props: PageProps<"/cargas">) {
   const historial = await versiones();
   const cargas = gestor ? (await listarCargas()).filter((c) => !["publicada", "retirada"].includes(c.estado)) : [];
   const validadas = cargas.filter((c) => c.estado === "validada").map((c) => c.id);
-  const [alertas, mesesCarga, aprobaciones] = validadas.length
-    ? await Promise.all([alertasDe(validadas), mesesDeCargas(validadas), aprobacionesDe(validadas)])
-    : [new Map<string, Alerta[]>(), new Map<string, Mes[]>(), new Map<string, Aprobacion>()];
   const vigente = historial.find((v) => !v.retirada_en);
+  // La versión vigente sin conciliar también puede recibir su control de BI después de publicada.
+  const cargaVigente = gestor && vigente && !vigente.conciliada_bi ? await cargaDeVersion(vigente.version) : null;
+  const conControl = [...validadas, ...(cargaVigente ? [cargaVigente] : [])];
+  const [alertas, mesesCarga, aprobaciones, controles] = conControl.length
+    ? await Promise.all([alertasDe(validadas), mesesDeCargas(validadas), aprobacionesDe(validadas), controlesDe(conControl)])
+    : [new Map<string, Alerta[]>(), new Map<string, Mes[]>(), new Map<string, Aprobacion>(), new Map<string, ControlBi>()];
   const publicada = gestor ? historial.find((v) => String(v.version) === sp.publicada) : undefined;
   const correo = typeof sp.correo === "string" ? CORREO[sp.correo] : undefined;
 
@@ -67,7 +73,7 @@ export default async function Cargas(props: PageProps<"/cargas">) {
           {correo && <p>{correo}</p>}
           <p>
             <Link href={`/resumen?version=${publicada.version}`} className="font-medium underline">Ver el resumen ejecutivo del mes</Link>
-            {" · "}Después, concilia con BI (paso 5 de la guía).
+            {publicada.conciliada_bi ? " · Quedó conciliada con BI." : " · Sin conciliar con BI: sube el control de BI abajo cuando llegue."}
           </p>
         </section>
       )}
@@ -91,7 +97,7 @@ export default async function Cargas(props: PageProps<"/cargas">) {
       {gestor && cargas.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-sm font-semibold">Cargas sin publicar</h2>
-          {cargas.map((c) => <TarjetaCarga key={c.id} c={c} alertas={alertas.get(c.id) ?? []} meses={mesesCarga.get(c.id) ?? []} aprobacion={aprobaciones.get(c.id)}
+          {cargas.map((c) => <TarjetaCarga key={c.id} c={c} alertas={alertas.get(c.id) ?? []} meses={mesesCarga.get(c.id) ?? []} aprobacion={aprobaciones.get(c.id)} control={controles.get(c.id)}
             siguiente={Math.max(0, ...historial.map((v) => v.version)) + 1} mesesVigente={vigente?.meses ?? []} />)}
         </section>
       )}
@@ -126,6 +132,12 @@ export default async function Cargas(props: PageProps<"/cargas">) {
           </Table>
         </div>
       </section>
+
+      {cargaVigente && vigente && (
+        <section id="conciliar" className="scroll-mt-4 border border-neutral-200 bg-white p-4">
+          <SeccionControl cargaId={cargaVigente} control={controles.get(cargaVigente)} titulo={`Conciliar v${vigente.version} con BI`} />
+        </section>
+      )}
     </div>
   );
 }
@@ -156,7 +168,7 @@ function FilaVersion({ v, vigente, gestor, retirable }: { v: Version; vigente: b
         <TableCell className="align-top">
           {vigente && (
             <div className="flex flex-col items-start gap-2">
-              {!v.conciliada_bi && <FormConciliar version={v.version} />}
+              {!v.conciliada_bi && <a href="#conciliar" className="text-sm underline underline-offset-2">Subir control de BI</a>}
               {retirable && <FormRetirar version={v.version} />}
             </div>
           )}
@@ -184,7 +196,7 @@ function TarjetaVersion({ v, vigente, gestor, retirable }: { v: Version; vigente
       </div>
       {gestor && vigente && (
         <div className="flex flex-col items-start gap-2">
-          {!v.conciliada_bi && <FormConciliar version={v.version} />}
+          {!v.conciliada_bi && <a href="#conciliar" className="text-sm underline underline-offset-2">Subir control de BI</a>}
           {retirable && <FormRetirar version={v.version} />}
         </div>
       )}
@@ -243,8 +255,8 @@ function Autoria({ v }: { v: Version }) {
   );
 }
 
-function TarjetaCarga({ c, alertas, meses: m, siguiente, mesesVigente, aprobacion }: {
-  c: FilaCarga; alertas: Alerta[]; meses: Mes[]; siguiente: number; mesesVigente: { anio: number; mes: number }[]; aprobacion?: Aprobacion;
+function TarjetaCarga({ c, alertas, meses: m, siguiente, mesesVigente, aprobacion, control }: {
+  c: FilaCarga; alertas: Alerta[]; meses: Mes[]; siguiente: number; mesesVigente: { anio: number; mes: number }[]; aprobacion?: Aprobacion; control?: ControlBi;
 }) {
   const enVigente = new Set(mesesVigente.map((x) => x.anio * 12 + x.mes));
   const orden = [...m].sort((a, b) => a.anio * 12 + a.mes - (b.anio * 12 + b.mes));
@@ -284,6 +296,7 @@ function TarjetaCarga({ c, alertas, meses: m, siguiente, mesesVigente, aprobacio
               Si BIA ya decidió a qué canal van, agrégalos en <Link href="/cargas/homologacion" className="underline">Homologación de canales</Link>: esta carga se actualiza al momento.
             </p>
           )}
+          <SeccionControl cargaId={c.id} control={control} titulo="Control de BI" />
           {ultimo && (aprobacion?.al_dia ? (
             <>
               <div role="status" className="space-y-1 border-t border-neutral-200 pt-4 text-sm">

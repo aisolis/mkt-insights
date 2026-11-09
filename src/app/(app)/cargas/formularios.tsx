@@ -4,9 +4,10 @@ import { useActionState, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ENCABEZADOS_CONTROL, MAX_BYTES_CONTROL } from "@/lib/cargas/control-bi";
 import { BUCKET_CARGAS, MAX_BYTES_CARGA, MIME_XLSX } from "@/lib/cargas/tipos";
 import { createClient } from "@/lib/supabase/client";
-import { anularAprobacionCarga, aprobarCarga, conciliarVersion, descartarCarga, prepararCargaAccion, publicarCarga, retirarVersion, type Estado } from "./acciones";
+import { anularAprobacionCarga, aprobarCarga, descartarCarga, prepararCargaAccion, publicarCarga, retirarVersion, subirControlAccion, type Estado } from "./acciones";
 
 type Paso = { tipo: "listo" | "error" | "trabajando"; texto: string } | null;
 
@@ -215,19 +216,60 @@ export function FormRetirar({ version }: { version: number }) {
   );
 }
 
-export function FormConciliar({ version }: { version: number }) {
-  const [estado, accion, enviando] = useActionState(conciliarVersion, null);
-  const [abierto, setAbierto] = useState(false);
-  if (!abierto) return <Button variant="outline" size="default" onClick={() => setAbierto(true)}>Marcar conciliada con BI</Button>;
-  return (
-    <form action={accion} className="space-y-2">
-      <input type="hidden" name="version" value={version} />
-      <Textarea name="nota" required minLength={10} maxLength={500} rows={2} placeholder="Reporte de BI usado y qué coincidió (p. ej. «Reporte BI sep-2026: venta neta y kg por canal iguales al centavo»)" />
-      <div className="flex gap-2">
-        <Button type="submit" size="default" disabled={enviando}>Confirmar conciliación</Button>
-        <Button type="button" variant="ghost" size="default" onClick={() => setAbierto(false)}>Cancelar</Button>
+/** Subir o reemplazar el reporte de BI de una carga (V1-06). */
+export function FormControl({ cargaId, reemplaza }: { cargaId: string; reemplaza: boolean }) {
+  const [estado, accion, enviando] = useActionState(subirControlAccion, null);
+  const [nombre, setNombre] = useState<string | null>(null);
+  const [grande, setGrande] = useState(false);
+  const contenido = (
+    <form action={accion} className="max-w-prose space-y-2">
+      <input type="hidden" name="carga" value={cargaId} />
+      <p className="text-xs text-neutral-600">
+        Columnas: {ENCABEZADOS_CONTROL}. Una fila por mes (y por empresa o canal si los trae), punto decimal, hasta 900 KB. Las filas de total se ignoran.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="inline-flex h-8 cursor-pointer items-center border border-neutral-300 bg-white px-3 text-sm font-medium hover:bg-neutral-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
+          Elegir reporte de BI
+          <input name="archivo" type="file" required accept=".xlsx,.csv" className="sr-only" onChange={(e) => {
+            const f = e.target.files?.[0];
+            setGrande(!!f && f.size > MAX_BYTES_CONTROL);
+            setNombre(f?.name ?? null);
+          }} />
+        </label>
+        <span className="min-w-0 truncate text-sm text-neutral-600" aria-live="polite">{nombre ?? "Ningún archivo elegido"}</span>
       </div>
-      <Aviso paso={estado} />
+      {grande && <p role="alert" className="text-sm text-red-700">El archivo pasa de 900 KB: pide a BI el reporte por mes y canal, no por línea.</p>}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Quién lo generó en BI</span>
+          <Input name="custodio" required minLength={3} maxLength={120} placeholder="P. ej. «Ana López, BI»" />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Corte del reporte</span>
+          <Input name="fecha_corte" type="date" required />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Kg: decimales que trae BI</span>
+          <select name="decimales_kg" defaultValue="2" className="h-8 w-full border border-neutral-300 bg-white px-2 text-sm">
+            {[0, 1, 2, 3, 4].map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Nota (opcional)</span>
+          <Input name="nota" maxLength={300} placeholder="P. ej. «Reporte Power BI de cierre»" />
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" variant={reemplaza ? "outline" : "default"} disabled={enviando || !nombre || grande}>{enviando ? "Comparando…" : "Subir y comparar"}</Button>
+        <Aviso paso={estado} />
+      </div>
     </form>
+  );
+  if (!reemplaza) return contenido;
+  return (
+    <details className="text-sm">
+      <summary className="inline-flex min-h-8 cursor-pointer items-center underline underline-offset-2">Reemplazar el control de BI</summary>
+      <div className="pt-2">{contenido}</div>
+    </details>
   );
 }

@@ -96,7 +96,7 @@ describe.skipIf(!url || !anon || !service)("acceso por perfil en la base", () =>
     it("no puede publicar, retirar ni conciliar versiones (solo el servidor, tras verificar el rol)", async () => {
       const estado = () => svc.schema("ventas").from("publicacion").select("conciliada_bi, retirada_en").eq("version", version).single().then((r) => r.data);
       const antes = await estado();
-      for (const [fn, args] of [["publicar", { p_carga: crypto.randomUUID() }], ["retirar_version", { p_version: version, p_motivo: "intento" }], ["marcar_conciliada", { p_version: version, p_nota: "intento de conciliar" }]] as const) {
+      for (const [fn, args] of [["publicar", { p_carga: crypto.randomUUID() }], ["retirar_version", { p_version: version, p_motivo: "intento" }], ["sellar_con_control", { p_version: version }]] as const) {
         expect((await sb.schema("ventas").rpc(fn, args)).error).not.toBeNull();
       }
       expect(await estado()).toEqual(antes);

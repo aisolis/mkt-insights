@@ -5,7 +5,7 @@ Para quien publica los datos cada mes (admin o aprobador en BIA Foresight). Toma
 ## Antes de empezar
 
 - Entra a BIA Foresight con tu correo, tu clave y el código de tu app de autenticación.
-- Ten a mano el reporte de BI del mes (Power BI o Excel con venta neta y kg por canal). Se usa en el paso 5.
+- Pide a BI su reporte del mes (Excel o CSV con venta neta y/o kg por mes, y si se puede por canal). Se usa en el paso 3c.
 
 ## 1. Exportar el mes del cubo
 
@@ -70,6 +70,20 @@ Si BIA todavía no decidió (hoy pasa con SEMI-MAYOREO y PENDIENTE), **no lo hom
 
 Los meses ya publicados **no cambian** al editar la homologación: siguen con el canal con que se publicaron. Para corregirlos, vuelve a subir el Excel de esos meses y publícalo; queda como una versión nueva. Cada cambio queda en el historial de la página (quién, cuándo, antes y después, y qué cargas se actualizaron).
 
+## 3c. Control de BI
+
+En la tarjeta de la carga, **Control de BI → Elegir reporte de BI**:
+
+- El archivo de BI (`.xlsx` o `.csv`, hasta 900 KB) con las columnas **Año**, **Mes** (número o nombre), **Empresa** y **Canal** si BI los separa, y **Venta Neta** y/o **Kg**. Una fila por clave; las filas de total se ignoran. Números con punto decimal («1234.56» o «1,234.56»).
+- Quién lo generó en BI, la fecha de corte del reporte y cuántos decimales trae BI en kg (venta neta se compara al centavo).
+
+La plataforma compara cifra por cifra al mismo nivel que el reporte y muestra cada diferencia (Foresight, BI y diferencia) y los meses que solo están de un lado. No hay tolerancia: si un centavo difiere, no coincide.
+
+- **Coincide:** al publicar con el último mes completo, la versión queda **conciliada con BI** sola, con el nombre del reporte, quién lo generó y el corte.
+- **No coincide o no hay control:** sale una alerta «Revisar». Se puede aprobar y publicar escribiendo el motivo, pero la versión queda **sin conciliar con BI**. Revisa la diferencia con BI antes de comunicar cifras.
+
+Si el reporte de BI llega después de publicar, súbelo en **Conciliar vN con BI**, debajo de la tabla de versiones: si coincide (y el mes se publicó completo), la versión vigente queda conciliada.
+
 ## 4. Aprobar y publicar
 
 Son dos pasos. Los puede hacer la misma persona; cada uno queda en el historial con quién lo hizo y con qué rol (aprobador o admin).
@@ -100,14 +114,11 @@ Al publicar, la página muestra el enlace **Ver el resumen ejecutivo del mes**. 
 - Se puede elegir otra versión u otro mes arriba.
 - **Imprimir o guardar PDF** deja una hoja limpia, sin el menú, para mandarla o llevarla a una reunión.
 
-Si la versión todavía no está conciliada con BI, el resumen lo dice. Concilia (paso 5) antes de circular cifras.
+Si la versión todavía no está conciliada con BI, el resumen lo dice. Concilia (paso 3c) antes de circular cifras.
 
 ## 5. Conciliar con BI
 
-Compara la venta neta y los kg por canal del dashboard con el reporte de BI del mes.
-
-- **Si coinciden:** en la versión vigente pulsa **Marcar conciliada con BI** y escribe contra qué reporte comparaste (por ejemplo, «Reporte BI oct-2026: venta neta y kg por canal iguales»). La cabecera pasa a decir «conciliada con BI».
-- **Si no coinciden:** no la marques. Revisa la diferencia con BI antes de comunicar las cifras.
+Ya no se marca a mano: la conciliación sale del control de BI (paso 3c). Si la versión vigente quedó sin conciliar, sube el reporte de BI en **Conciliar vN con BI**.
 
 ## Si algo salió mal
 
