@@ -27,7 +27,10 @@ export async function cambiarVigenciaDocumento(_: EstadoVigencia, form: FormData
   await requerirAdmin();
   const id = z.uuid().safeParse(form.get("id"));
   if (!id.success) return { error: "Documento no válido." };
-  const r = await cambiarVigencia(id.data, form.get("vigente") === "si");
+  const vigente = form.get("vigente") === "si";
+  const motivo = String(form.get("motivo") ?? "").trim().slice(0, 300);
+  if (!vigente && motivo.length < 5) return { error: "Escribe el motivo del retiro." };
+  const r = await cambiarVigencia(id.data, vigente, vigente ? null : motivo);
   if (!r.error) revalidatePath("/conocimiento");
   return r;
 }

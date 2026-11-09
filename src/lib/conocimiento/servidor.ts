@@ -53,6 +53,10 @@ export const MetaDocumento = z.object({
   fecha_documento: z.iso.date().nullable(),
   descripcion: z.string().trim().max(1000).nullable(),
   audiencia: z.enum(["estandar", "plus"]),
+  propietario: z.string().trim().min(2, "Indica quién es el dueño del documento en BIA.").max(120),
+  derechos: z.string().trim().min(3, "Indica de quién son los derechos y qué uso permiten.").max(300),
+  vigente_hasta: z.iso.date().nullable(),
+  sustituye_a: z.uuid().nullable(),
   nombre_archivo: z.string().trim().min(1).max(200).regex(/\.pdf$/i, "Solo se aceptan PDF."),
   bytes: z.number().int().positive().max(MAX_BYTES, "El archivo pasa de 20 MB."),
 });
@@ -66,38 +70,56 @@ export async function prepararSubida(meta: MetaDocumento, subidoPor: string): Pr
   const svc = createServiceClient();
   const id = crypto.randomUUID();
   const ruta = `documentos/${id}.pdf`;
-  const ins = await svc.schema("conocimiento").from("documento").insert({ id, ...meta, ruta_archivo: ruta, subido_por: subidoPor });
+  let version = 1;
+  if (meta.sustituye_a) {
+    const ant = await svc.schema("conocimiento").from("documento").select("estado, version").eq("id", meta.sustituye_a).maybeSingle();
+    if (!ant.data || ant.data.estado !== "listo") return { error: "El documento que se sustituye ya no está vigente." };
+    version = ant.data.version + 1;
+  }
+  const ins = await svc.schema("conocimiento").from("documento").insert({ id, ...meta, version, ruta_archivo: ruta, subido_por: subidoPor });
   if (ins.error) return { error: `No se pudo registrar el documento (${ins.error.message}).` };
   const url = await svc.storage.from(BUCKET).createSignedUploadUrl(ruta);
   if (url.error) return { error: `No se pudo preparar la subida (${url.error.message}).` };
   return { id, ruta, token: url.data.token };
 }
 
+/** Procesa el PDF; si sustituye a otro documento, al quedar listo retira el anterior con el motivo (S32). */
 export async function procesar(id: string) {
-  return procesarDocumento(createServiceClient(), id, configEmbeddings());
+  const svc = createServiceClient();
+  const r = await procesarDocumento(svc, id, configEmbeddings());
+  if (r.estado !== "listo") return r;
+  const doc = await svc.schema("conocimiento").from("documento").select("titulo, version, sustituye_a").eq("id", id).single();
+  if (doc.data?.sustituye_a) {
+    await svc.schema("conocimiento").from("documento").update({
+      estado: "retirado", retirado_en: new Date().toISOString(), motivo_retiro: `Sustituido por «${doc.data.titulo}» (v${doc.data.version}).`,
+    }).eq("id", doc.data.sustituye_a).eq("estado", "listo");
+  }
+  return r;
 }
 
 export type FilaDocumentoAdmin = {
   id: string; titulo: string; fuente: string; fecha_documento: string | null; audiencia: Audiencia; estado: string; error: string | null;
   paginas: number | null; fragmentos: number; modelo_embedding: string | null; nombre_archivo: string; creado_en: string;
+  propietario: string | null; derechos: string | null; vigente_hasta: string | null; version: number; sustituye_a: string | null;
+  motivo_retiro: string | null; fragmentos_sospechosos: number;
 };
 
 export async function listarDocumentosAdmin(): Promise<FilaDocumentoAdmin[]> {
   const { data, error } = await createServiceClient().schema("conocimiento").from("documento")
-    .select("id, titulo, fuente, fecha_documento, audiencia, estado, error, paginas, fragmentos, modelo_embedding, nombre_archivo, creado_en")
+    .select("id, titulo, fuente, fecha_documento, audiencia, estado, error, paginas, fragmentos, modelo_embedding, nombre_archivo, creado_en, propietario, derechos, vigente_hasta, version, sustituye_a, motivo_retiro, fragmentos_sospechosos")
     .order("creado_en", { ascending: false });
   if (error) throw new Error(`documentos: ${error.message}`);
   return data as FilaDocumentoAdmin[];
 }
 
 /** Retirar lo saca de la búsqueda y de la lista (el archivo queda para auditoría); reactivar lo devuelve. */
-export async function cambiarVigencia(id: string, vigente: boolean): Promise<{ error?: string }> {
+export async function cambiarVigencia(id: string, vigente: boolean, motivo: string | null = null): Promise<{ error?: string }> {
   const svc = createServiceClient();
   const doc = await svc.schema("conocimiento").from("documento").select("estado, fragmentos").eq("id", id).single();
   if (doc.error) return { error: "No existe el documento." };
   if (vigente && (doc.data.estado !== "retirado" || doc.data.fragmentos === 0)) return { error: "Solo se reactiva un documento retirado que ya estaba procesado." };
   const r = await svc.schema("conocimiento").from("documento")
-    .update(vigente ? { estado: "listo", retirado_en: null } : { estado: "retirado", retirado_en: new Date().toISOString() }).eq("id", id);
+    .update(vigente ? { estado: "listo", retirado_en: null, motivo_retiro: null } : { estado: "retirado", retirado_en: new Date().toISOString(), motivo_retiro: motivo }).eq("id", id);
   if (r.error) return { error: r.error.code === "23505" ? "Hay otro documento vigente con el mismo archivo." : `No se pudo guardar (${r.error.message}).` };
   return {};
 }

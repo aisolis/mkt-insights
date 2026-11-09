@@ -9,6 +9,7 @@ import { extractText, getDocumentProxy } from "unpdf";
 import { aVector, embeber, type ConfigEmbeddings } from "./embeddings";
 import { fragmentar } from "./fragmentar";
 import { BUCKET, MAX_BYTES } from "./tipos";
+import { pareceInstruccion } from "./inyeccion";
 
 export { BUCKET, MAX_BYTES };
 
@@ -64,12 +65,15 @@ export async function procesarDocumento(svc: SupabaseClient, id: string, emb: Co
 
   await svc.schema("conocimiento").from("fragmento").delete().eq("documento_id", id);
   for (let i = 0; i < fragmentos.length; i += 200) {
-    const filas = fragmentos.slice(i, i + 200).map((f, j) => ({ documento_id: id, ...f, embedding: vectores ? aVector(vectores[i + j]) : null }));
+    const filas = fragmentos.slice(i, i + 200).map((f, j) => ({
+      documento_id: id, ...f, embedding: vectores ? aVector(vectores[i + j]) : null, sospechoso: pareceInstruccion(f.texto),
+    }));
     const r = await svc.schema("conocimiento").from("fragmento").insert(filas);
     if (r.error) return fallar(`No se pudieron guardar los fragmentos (${r.error.message}).`);
   }
   const fin = await svc.schema("conocimiento").from("documento").update({
     estado: "listo", paginas: paginas.length, fragmentos: fragmentos.length, modelo_embedding: vectores ? emb!.modelo : null, procesado_en: new Date().toISOString(),
+    fragmentos_sospechosos: fragmentos.filter((f) => pareceInstruccion(f.texto)).length,
   }).eq("id", id);
   if (fin.error) return fallar(`No se pudo cerrar el proceso (${fin.error.message}).`);
   return { estado: "listo", fragmentos: fragmentos.length, conEmbeddings: !!vectores };

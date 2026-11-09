@@ -11,7 +11,7 @@ import { cambiarVigenciaDocumento, prepararDocumento, procesarDocumentoSubido } 
 type Paso = { tipo: "listo" | "error" | "trabajando"; texto: string } | null;
 
 /** Subida en tres pasos: registrar (servidor) → subir el PDF directo a Storage (navegador) → procesar (servidor). */
-export function FormSubir() {
+export function FormSubir({ vigentes }: { vigentes: { id: string; titulo: string; version: number }[] }) {
   const router = useRouter();
   const form = useRef<HTMLFormElement>(null);
   const [paso, setPaso] = useState<Paso>(null);
@@ -27,7 +27,8 @@ export function FormSubir() {
     setPaso({ tipo: "trabajando", texto: "Registrando el documento…" });
     const subida = await prepararDocumento({
       titulo: texto("titulo") ?? "", fuente: texto("fuente") ?? "", fecha_documento: texto("fecha"), descripcion: texto("descripcion"),
-      audiencia: datos.get("audiencia"), nombre_archivo: archivo.name, bytes: archivo.size,
+      audiencia: datos.get("audiencia"), propietario: texto("propietario") ?? "", derechos: texto("derechos") ?? "",
+      vigente_hasta: texto("vigente_hasta"), sustituye_a: texto("sustituye_a"), nombre_archivo: archivo.name, bytes: archivo.size,
     });
     if ("error" in subida) return setPaso({ tipo: "error", texto: subida.error });
 
@@ -56,6 +57,17 @@ export function FormSubir() {
           <option value="plus">Solo Plus</option>
         </select>
       </Campo>
+      <Campo etiqueta="Dueño en BIA (quién responde por el documento)"><Input name="propietario" required minLength={2} maxLength={120} placeholder="P. ej. «Natalia, Insights»" className="h-9" /></Campo>
+      <Campo etiqueta="Vigente hasta (opcional; después no se usa)"><Input name="vigente_hasta" type="date" className="h-9" /></Campo>
+      <Campo etiqueta="Derechos de uso" ancho><Input name="derechos" required minLength={3} maxLength={300} placeholder="P. ej. «Estudio propio de BIA» o «Licencia de la agencia, solo uso interno»" className="h-9" /></Campo>
+      {vigentes.length > 0 && (
+        <Campo etiqueta="Sustituye a (opcional: queda como su versión nueva y el anterior se retira)" ancho>
+          <select name="sustituye_a" defaultValue="" className="block h-9 w-full border border-input bg-background px-2 text-sm">
+            <option value="">Ninguno: es un documento nuevo</option>
+            {vigentes.map((d) => <option key={d.id} value={d.id}>{d.titulo} (v{d.version})</option>)}
+          </select>
+        </Campo>
+      )}
       <Campo etiqueta="Descripción (opcional)" ancho><Textarea name="descripcion" maxLength={1000} rows={2} /></Campo>
       <Campo etiqueta="Archivo PDF (máx. 20 MB, con texto seleccionable)" ancho>
         <input name="archivo" type="file" accept="application/pdf,.pdf" required className="block w-full text-sm" />
@@ -85,13 +97,20 @@ function Campo({ etiqueta, ancho, children }: { etiqueta: string; ancho?: boolea
   );
 }
 
+/** Retirar (con motivo) o reactivar un documento. */
 export function Vigencia({ id, vigente, children }: { id: string; vigente: boolean; children: React.ReactNode }) {
   const [estado, accion, enviando] = useActionState(cambiarVigenciaDocumento, null);
+  const [abierto, setAbierto] = useState(false);
+  if (!vigente && !abierto) return <Button variant="outline" onClick={() => setAbierto(true)}>{children}</Button>;
   return (
-    <form action={accion} className="inline-flex flex-col items-start">
+    <form action={accion} className="inline-flex flex-col items-start gap-1">
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="vigente" value={vigente ? "si" : "no"} />
-      <Button type="submit" variant="outline" size="xs" disabled={enviando}>{children}</Button>
+      {!vigente && <Input name="motivo" required minLength={5} maxLength={300} placeholder="Motivo del retiro" aria-label="Motivo del retiro" className="h-8 w-56" />}
+      <span className="inline-flex gap-1">
+        <Button type="submit" variant="outline" disabled={enviando}>{children}</Button>
+        {!vigente && <Button type="button" variant="ghost" onClick={() => setAbierto(false)}>Cancelar</Button>}
+      </span>
       {estado?.error && <span role="alert" className="mt-1 max-w-48 text-xs text-red-700">{estado.error}</span>}
     </form>
   );

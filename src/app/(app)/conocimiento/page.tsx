@@ -29,7 +29,7 @@ export default async function Conocimiento() {
       {usuario.esAdmin && (
         <section className="space-y-3 border border-neutral-200 bg-white p-4">
           <h2 className="text-sm font-semibold">Subir un documento</h2>
-          <FormSubir />
+          <FormSubir vigentes={(todos ?? []).filter((d) => d.estado === "listo").map((d) => ({ id: d.id, titulo: d.titulo, version: d.version }))} />
         </section>
       )}
 
@@ -45,6 +45,8 @@ export default async function Conocimiento() {
                   <div className="font-medium">{d.titulo}</div>
                   <div className="text-xs text-neutral-500">
                     {d.fuente}{d.fecha_documento && ` · ${fechaCorta(d.fecha_documento)}`}{d.paginas && ` · ${d.paginas} págs.`}
+                    {d.version > 1 && ` · v${d.version}`}{d.propietario && ` · dueño: ${d.propietario}`}
+                    {d.vigente_hasta && ` · vigente hasta ${fechaCorta(d.vigente_hasta)}`}
                     {d.audiencia === "plus" && " · solo Plus"}
                   </div>
                   {d.descripcion && <p className="text-sm text-neutral-700">{d.descripcion}</p>}
@@ -62,6 +64,7 @@ export default async function Conocimiento() {
 }
 
 function Administracion({ filas }: { filas: FilaDocumentoAdmin[] }) {
+  const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Tegucigalpa" }).format(new Date());
   return (
     <section className="space-y-2">
       <h2 className="text-sm font-semibold">Todos los documentos (admin)</h2>
@@ -82,7 +85,21 @@ function Administracion({ filas }: { filas: FilaDocumentoAdmin[] }) {
               <TableRow key={d.id}>
                 <TableCell>
                   <div className="font-medium">{d.titulo}</div>
-                  <div className="text-xs text-neutral-500">{d.fuente} · {d.nombre_archivo}</div>
+                  <div className="text-xs text-neutral-500">{d.fuente} · {d.nombre_archivo}{d.version > 1 && ` · v${d.version}`}</div>
+                  <div className="max-w-80 text-xs whitespace-normal text-neutral-500">
+                    {d.propietario ? `Dueño: ${d.propietario}` : "Sin dueño registrado"}{d.derechos && ` · ${d.derechos}`}
+                  </div>
+                  {d.vigente_hasta && (
+                    <div className={`text-xs ${d.vigente_hasta < hoy ? "text-red-700" : "text-neutral-500"}`}>
+                      {d.vigente_hasta < hoy ? `Venció el ${fechaCorta(d.vigente_hasta)}: el asistente ya no lo usa` : `Vigente hasta ${fechaCorta(d.vigente_hasta)}`}
+                    </div>
+                  )}
+                  {d.fragmentos_sospechosos > 0 && (
+                    <div className="max-w-80 text-xs whitespace-normal text-amber-900">
+                      {d.fragmentos_sospechosos === 1 ? "1 fragmento tiene" : `${d.fragmentos_sospechosos} fragmentos tienen`} texto que parece instrucciones para la IA: no se usan. Revisa el PDF.
+                    </div>
+                  )}
+                  {d.motivo_retiro && <div className="max-w-80 text-xs whitespace-normal text-neutral-600">Retiro: {d.motivo_retiro}</div>}
                   {d.error && <div className="max-w-80 text-xs whitespace-normal text-red-700">{d.error}</div>}
                 </TableCell>
                 <TableCell>{d.audiencia === "plus" ? "Solo Plus" : "Todos"}</TableCell>

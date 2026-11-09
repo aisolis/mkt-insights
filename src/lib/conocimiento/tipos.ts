@@ -32,6 +32,9 @@ export const DocumentoVisible = z.object({
   audiencia: Audiencia,
   paginas: z.number().nullable(),
   creado_en: z.string(),
+  propietario: z.string().nullable().default(null),
+  vigente_hasta: z.string().nullable().default(null),
+  version: z.number().default(1),
 });
 export type DocumentoVisible = z.infer<typeof DocumentoVisible>;
 
