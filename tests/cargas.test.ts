@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { alertasCarga, esParcial } from "@/lib/cargas/alertas";
 import { camposVacios, ENCABEZADOS_CUBO } from "@/lib/cargas/columnas";
 import { mesesParaAlertas } from "@/lib/cargas/composicion";
-import { procesarCarga } from "@/lib/cargas/ingesta";
+import { ejecutarCarga, procesarCarga } from "@/lib/cargas/ingesta";
 import { BUCKET_CARGAS, MIME_XLSX, type Mes } from "@/lib/cargas/tipos";
 import { dias, xlsxDePrueba } from "./xlsx-prueba";
 
@@ -95,6 +95,25 @@ describe.skipIf(!url || !service)("carga mensual contra el Supabase local", () =
       await svc.storage.from(BUCKET_CARGAS).remove(cargas.map((id) => `pruebas/${id}.xlsx`));
       await svc.schema("ventas").from("carga").delete().in("id", cargas);
     }
+  });
+
+  it("el proceso toma la carga con un intento; uno detenido se retoma y el viejo ya no escribe (S30)", { timeout: 60_000 }, async () => {
+    const id = await subir("intentos.xlsx", await xlsxDePrueba(dias(2026, 10, 3).map((fecha) => ({ fecha, canal, ventaNeta: 10 }))));
+    const tomar = () => svc.schema("ventas").rpc("tomar_carga", { p_carga: id }).then((r) => r.data as number | null);
+    const latir = (intento: number) => svc.schema("ventas").rpc("latir_carga", { p_carga: id, p_intento: intento, p_etapa: "prueba", p_avance: 5 }).then((r) => r.data);
+    const uno = await tomar();
+    expect(uno).toEqual(expect.any(Number));
+    expect(await tomar()).toBeNull(); // vivo: nadie más la toma
+    expect(await latir(uno!)).toBe(true);
+    await svc.schema("ventas").from("carga").update({ latido_en: new Date(Date.now() - 3 * 60_000).toISOString() }).eq("id", id);
+    const dos = await tomar(); // sin señal 3 minutos: se retoma
+    expect(dos).toBe(uno! + 1);
+    expect(await latir(uno!)).toBe(false); // el intento viejo queda fuera
+    expect(await ejecutarCarga(svc, id, uno!)).toMatchObject({ estado: "con_errores", error: expect.stringMatching(/Otro proceso tomó/) });
+    expect((await svc.schema("ventas").from("hecho").select("id", { count: "exact", head: true }).eq("carga_id", id)).count).toBe(0);
+    expect(await ejecutarCarga(svc, id, dos!)).toMatchObject({ estado: "validada", conteo: { cargadas: 3 } });
+    expect((await svc.schema("ventas").from("carga").select("estado, etapa, avance_filas").eq("id", id).single()).data).toEqual({ estado: "validada", etapa: null, avance_filas: 3 });
+    expect(await tomar()).toBeNull(); // ya validada
   });
 
   it("una celda inválida manda solo su fila a cuarentena; muchas tumban la carga (S29)", { timeout: 60_000 }, async () => {

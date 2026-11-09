@@ -7,10 +7,10 @@ import { esParcial } from "@/lib/cargas/alertas";
 import type { ControlBi } from "@/lib/cargas/control-bi";
 import { cargaDeVersion, controlesDe } from "@/lib/cargas/control-servidor";
 import { alertasDe, aprobacionesDe, cuarentenaDe, listarCargas, mesesDeCargas, versiones, type FilaCuarentena } from "@/lib/cargas/servidor";
-import type { Alerta, Aprobacion, FilaCarga, Mes, RolPaso, Version } from "@/lib/cargas/tipos";
+import { LATIDO_VENCIDO_MS, type Alerta, type Aprobacion, type FilaCarga, type Mes, type RolPaso, type Version } from "@/lib/cargas/tipos";
 import { conteo, fechaCorta, fechaLocal, periodoCorto, periodoLargo } from "@/lib/format";
 import { SeccionControl } from "./control";
-import { AnularAprobacion, Descartar, FormAprobar, FormCargar, FormPublicar, FormRetirar, Reintentar } from "./formularios";
+import { AnularAprobacion, Descartar, FormAprobar, FormCargar, FormPublicar, FormRetirar, Refrescar, Reintentar } from "./formularios";
 
 /** Publicar recalcula los metadatos de la versión sobre todo el cubo (~15 s con 1 M de filas). */
 export const maxDuration = 300;
@@ -60,6 +60,7 @@ export default async function Cargas(props: PageProps<"/cargas">) {
 
   return (
     <div className="space-y-6">
+      <Refrescar activo={cargas.some((c) => c.estado === "procesando" && !detenida(c))} />
       <div className="space-y-1">
         <h1 className="text-xl font-semibold">Cargas y versiones</h1>
         <p className="max-w-prose text-sm text-neutral-500">
@@ -239,6 +240,28 @@ const TONO: Record<Alerta["nivel"], string> = {
 };
 const ETIQUETA: Record<Alerta["nivel"], string> = { bloqueo: "Bloquea", revisar: "Revisar", info: "Info" };
 
+/** Sin señal del proceso por más de 2 minutos (S30): se puede reintentar. */
+const detenida = (c: FilaCarga) => c.estado === "procesando" && (!c.latido_en || Date.now() - new Date(c.latido_en).getTime() > LATIDO_VENCIDO_MS);
+
+/** Etapa y avance de una carga en proceso, o el aviso de que se detuvo. */
+function Proceso({ c }: { c: FilaCarga }) {
+  if (detenida(c)) {
+    return (
+      <p role="status" className="max-w-prose text-sm text-amber-900">
+        El proceso se detuvo{c.latido_en ? ` (última señal ${fechaLocal(c.latido_en)})` : ""}: pulsa Reintentar. Empieza de cero y no duplica filas.
+      </p>
+    );
+  }
+  return (
+    <p role="status" aria-live="polite" className="text-sm text-neutral-700">
+      {c.etapa ? c.etapa.charAt(0).toUpperCase() + c.etapa.slice(1) : "En cola"}
+      {c.avance_filas ? ` · ${conteo(c.avance_filas)} filas cargadas` : ""}
+      {c.procesando_desde && ` · desde ${fechaLocal(c.procesando_desde)}`}
+      {". Se actualiza solo; puedes cerrar la página."}
+    </p>
+  );
+}
+
 const ROL: Record<RolPaso, string> = { admin: "admin", aprobador: "aprobador", servicio: "script de Intelia" };
 const quien = (nombre: string | null, rol: RolPaso | null) => `${nombre ?? (rol === "servicio" ? "Intelia" : "alguien")}${rol ? ` (${ROL[rol]})` : ""}`;
 
@@ -279,10 +302,11 @@ function TarjetaCarga({ c, alertas, meses: m, siguiente, mesesVigente, aprobacio
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={estado.variante}>{estado.txt}</Badge>
-          {["recibida", "con_errores"].includes(c.estado) && <Reintentar id={c.id} />}
-          {c.estado !== "procesando" && <Descartar id={c.id} />}
+          {(["recibida", "con_errores"].includes(c.estado) || detenida(c)) && <Reintentar id={c.id} />}
+          {(c.estado !== "procesando" || detenida(c)) && <Descartar id={c.id} />}
         </div>
       </div>
+      {c.estado === "procesando" && <Proceso c={c} />}
       {c.error && <ErrorCarga id={c.id} error={c.error} />}
       {c.estado === "validada" && (
         <>

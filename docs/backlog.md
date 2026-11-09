@@ -123,7 +123,9 @@
 - [x] Aprobar y publicar por separado (V1-07, S27): aprobación con huella de la carga, alertas aceptadas con motivo, rol de cada paso; la aprobación vence si la carga cambia; quitar la aprobación con motivo — `0020_aprobacion.sql`
 - [x] Control de BI (V1-06, S28): subir el reporte de BI (.xlsx/.csv), guardar el original con su huella, custodio y corte, comparar al nivel del reporte y mostrar cada diferencia; «conciliada con BI» solo si coincide y el mes es completo; sin nota a mano — `0021_control_bi.sql`
 - [x] Cuarentena de filas con celdas inválidas (V1-04/05, S29): solo esa fila queda fuera, con hoja, fila, dato y valor; alerta «Revisar»; más del 1 % sigue fallando — `0022_cuarentena.sql`
-- [ ] Proyecto alojado: aplicar `0020_aprobacion.sql`, `0021_control_bi.sql` (crea el bucket `controles-bi`) y `0022_cuarentena.sql`
+- [x] Procesar cargas en segundo plano (V1-03/21, S30): respuesta inmediata, etapa y avance en la tarjeta (se actualiza sola), intento con fencing, reintento de un proceso detenido sin duplicar — `0023_procesamiento.sql`
+- [ ] Proyecto alojado: aplicar `0020_aprobacion.sql`, `0021_control_bi.sql` (crea el bucket `controles-bi`), `0022_cuarentena.sql` y `0023_procesamiento.sql`
+- [ ] Cola con trabajador aparte (y subida reanudable) si BIA necesita cargar desde la app archivos de más de 50 MB o más de 300 s
 - [ ] Confirmar con BI (Q09) la regla de precisión y el formato de su reporte; probar con un reporte real
 - [ ] ¿Exigir control de BI que coincida para publicar? Hoy se puede publicar sin conciliar, con motivo
 - [ ] Decidir con BIA (Q15) si quien aprueba puede publicar la misma carga

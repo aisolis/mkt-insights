@@ -22,7 +22,7 @@ Fecha · Ruta · Empresa · Marca · Café/Rep · Proveedor · Cliente Codigo ·
 
 ## 2. Subir
 
-En **Cargas y versiones → Carga del mes**, elige el archivo y pulsa **Subir y validar**. Lee y valida las filas; tarda uno o dos minutos.
+En **Cargas y versiones → Carga del mes**, elige el archivo y pulsa **Subir y validar**. Espera solo a que termine la subida: después la plataforma lee y valida las filas en segundo plano (uno o dos minutos) y la tarjeta de la carga muestra la etapa y las filas cargadas; puedes cerrar la página y volver. Si el proceso se detiene (sin señales por 2 minutos), la tarjeta lo dice: **Reintentar** empieza de cero sin duplicar filas.
 
 Si sale un error, el mensaje dice la hoja y la fila. Los más comunes:
 

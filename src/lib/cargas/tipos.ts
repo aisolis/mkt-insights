@@ -8,10 +8,14 @@ export type Mes = { anio: number; mes: number; filas: number; venta_neta: number
 
 export type Alerta = { nivel: "bloqueo" | "revisar" | "info"; texto: string };
 
+/** Sin señal del proceso por más de esto, la carga se considera detenida y se puede reintentar (igual que la base). */
+export const LATIDO_VENCIDO_MS = 2 * 60 * 1000;
+
 export type FilaCarga = {
   id: string; nombre_archivo: string; estado: string; error: string | null; bytes: number | null;
   periodo_desde: string | null; periodo_hasta: string | null; filas_cargadas: number | null; filas_duplicadas: number | null;
   filas_discrepancia: number | null; filas_cuarentena: number; creado_en: string; subido_por: string | null;
+  etapa: string | null; avance_filas: number | null; latido_en: string | null; procesando_desde: string | null;
 };
 
 export type RolPaso = "admin" | "aprobador" | "servicio";

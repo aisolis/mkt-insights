@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,9 +20,21 @@ function Aviso({ paso }: { paso: Paso | Estado }) {
   return <p role={error ? "alert" : "status"} className={`text-sm ${tono}`}>{texto}</p>;
 }
 
-async function procesarEnServidor(id: string): Promise<{ estado: string; error?: string; conteo?: { cargadas: number } }> {
+/** Inicia el proceso (S30): el servidor responde al momento y sigue en segundo plano. */
+async function procesarEnServidor(id: string): Promise<{ estado: string; error?: string }> {
   const r = await fetch(`/api/cargas/${id}/procesar`, { method: "POST" });
   return r.ok ? r.json() : { estado: "con_errores", error: (await r.json().catch(() => null))?.error ?? `Error ${r.status}` };
+}
+
+/** Mientras alguna carga se procesa, la página se actualiza sola cada pocos segundos para mostrar la etapa y el avance. */
+export function Refrescar({ activo }: { activo: boolean }) {
+  const router = useRouter();
+  useEffect(() => {
+    if (!activo) return;
+    const t = setInterval(() => router.refresh(), 3000);
+    return () => clearInterval(t);
+  }, [activo, router]);
+  return null;
 }
 
 /** Subida en tres pasos: registrar (servidor) → subir el Excel directo a Storage (navegador) → procesar (servidor). */
@@ -50,10 +62,10 @@ export function FormCargar() {
       return setPaso({ tipo: "error", texto: `No se pudo subir el archivo (${up.error.message}). Reintenta desde la lista.` });
     }
 
-    setPaso({ tipo: "trabajando", texto: "Leyendo y validando las filas (puede tardar un par de minutos)…" });
+    setPaso({ tipo: "trabajando", texto: "Iniciando el proceso…" });
     const r = await procesarEnServidor(subida.id);
-    setPaso(r.estado === "validada"
-      ? { tipo: "listo", texto: `Validada: ${r.conteo?.cargadas.toLocaleString("es-HN")} filas. Revisa las alertas abajo y publica.` }
+    setPaso(r.estado === "procesando"
+      ? { tipo: "listo", texto: "Subido. Se está procesando en segundo plano: el avance se ve abajo y puedes cerrar esta página." }
       : { tipo: "error", texto: r.error ?? "No se pudo procesar." });
     form.current?.reset();
     router.refresh();
@@ -72,7 +84,7 @@ export function FormCargar() {
         <span className="min-w-0 truncate text-sm text-neutral-600" aria-live="polite">{nombre ?? "Ningún archivo elegido"}</span>
         <Button type="submit" disabled={trabajando || !nombre}>{trabajando ? "Procesando…" : "Subir y validar"}</Button>
       </div>
-      {trabajando && <p className="text-xs text-neutral-500">No cierres esta página mientras se procesa.</p>}
+      {trabajando && <p className="text-xs text-neutral-500">No cierres esta página hasta que termine la subida.</p>}
       <Aviso paso={paso} />
     </form>
   );
@@ -84,11 +96,11 @@ export function Reintentar({ id }: { id: string }) {
   return (
     <span className="inline-flex flex-col items-start gap-1">
       <Button variant="outline" size="default" disabled={paso?.tipo === "trabajando"} onClick={async () => {
-        setPaso({ tipo: "trabajando", texto: "Procesando…" });
+        setPaso({ tipo: "trabajando", texto: "Iniciando…" });
         const r = await procesarEnServidor(id);
-        setPaso(r.estado === "validada" ? null : { tipo: "error", texto: r.error ?? "No se pudo procesar." });
+        setPaso(r.estado === "procesando" ? null : { tipo: "error", texto: r.error ?? "No se pudo procesar." });
         router.refresh();
-      }}>{paso?.tipo === "trabajando" ? "Procesando…" : "Reintentar"}</Button>
+      }}>{paso?.tipo === "trabajando" ? "Iniciando…" : "Reintentar"}</Button>
       <Aviso paso={paso?.tipo === "error" ? paso : null} />
     </span>
   );

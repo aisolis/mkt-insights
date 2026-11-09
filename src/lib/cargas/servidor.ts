@@ -8,7 +8,7 @@ import { camposVacios, type ColumnasHoja } from "./columnas";
 import { alertaControl } from "./control-bi";
 import { controlesDe } from "./control-servidor";
 import { canalesParaAlertas, mesesParaAlertas } from "./composicion";
-import { procesarCarga } from "./ingesta";
+import { ejecutarCarga, tomarCarga } from "./ingesta";
 import { correoResumen, datosResumen, rutaResumen, type FuenteResumen, type VersionResumen } from "./resumen";
 import { BUCKET_CARGAS, MAX_BYTES_CARGA, type Alerta, type Aprobacion, type FilaCarga, type RolPaso, type Version } from "./tipos";
 
@@ -57,7 +57,7 @@ export async function enviarResumenPublicado(version: number, origen: string): P
 
 export async function listarCargas(): Promise<FilaCarga[]> {
   const { data, error } = await createServiceClient().schema("ventas").from("carga")
-    .select("id, nombre_archivo, estado, error, bytes, periodo_desde, periodo_hasta, filas_cargadas, filas_duplicadas, filas_discrepancia, filas_cuarentena, creado_en, subido_por")
+    .select("id, nombre_archivo, estado, error, bytes, periodo_desde, periodo_hasta, filas_cargadas, filas_duplicadas, filas_discrepancia, filas_cuarentena, creado_en, subido_por, etapa, avance_filas, latido_en, procesando_desde")
     .order("creado_en", { ascending: false }).limit(30);
   if (error) throw new Error(`cargas: ${error.message}`);
   return data as FilaCarga[];
@@ -128,7 +128,9 @@ export async function prepararCarga(meta: z.infer<typeof MetaCarga>, subidoPor: 
   return { id, ruta, token: url.data.token };
 }
 
-export const procesar = (id: string) => procesarCarga(createServiceClient(), id);
+/** Inicia el proceso de una carga (S30): la toma ahora y devuelve el intento; el trabajo va en ejecutarProceso. */
+export const iniciarProceso = (id: string) => tomarCarga(createServiceClient(), id);
+export const ejecutarProceso = (id: string, intento: number) => ejecutarCarga(createServiceClient(), id, intento);
 
 /** Última aprobación sin anular de cada carga, con su autor y si sigue al día. */
 export async function aprobacionesDe(cargaIds: string[]): Promise<Map<string, Aprobacion>> {
