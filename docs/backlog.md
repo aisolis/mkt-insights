@@ -118,3 +118,9 @@
 - [ ] Equivalencias de valores para más dimensiones (hoy solo canal): grupo, subgrupo y sucursal ya están previstas en `ventas.homologacion`
 - [ ] Formato de números con coma decimal ("1.234,56") si BIA llega a exportar así
 - [ ] Proyecto alojado: aplicar `0019_columnas_carga.sql`
+
+## G11 — Brechas del checklist de capacidades V1 (solo código)
+- [x] Aprobar y publicar por separado (V1-07, S27): aprobación con huella de la carga, alertas aceptadas con motivo, rol de cada paso; la aprobación vence si la carga cambia; quitar la aprobación con motivo — `0020_aprobacion.sql`
+- [ ] Proyecto alojado: aplicar `0020_aprobacion.sql`
+- [ ] Decidir con BIA (Q15) si quien aprueba puede publicar la misma carga
+

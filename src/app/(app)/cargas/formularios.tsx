@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { BUCKET_CARGAS, MAX_BYTES_CARGA, MIME_XLSX } from "@/lib/cargas/tipos";
 import { createClient } from "@/lib/supabase/client";
-import { conciliarVersion, descartarCarga, prepararCargaAccion, publicarCarga, retirarVersion, type Estado } from "./acciones";
+import { anularAprobacionCarga, aprobarCarga, conciliarVersion, descartarCarga, prepararCargaAccion, publicarCarga, retirarVersion, type Estado } from "./acciones";
 
 type Paso = { tipo: "listo" | "error" | "trabajando"; texto: string } | null;
 
@@ -106,11 +106,69 @@ export function Descartar({ id }: { id: string }) {
 }
 
 /**
- * Publicar: lo que va a cambiar (versión, meses que reemplaza y agrega), notas, si el último mes está completo y, si
- * hay alertas para revisar, la confirmación. Bloqueada, dice por qué junto al botón.
+ * Paso 1 de 2 (V1-07): aprobar la carga tal como está. Quien aprueba declara si el último mes está completo y, si hay
+ * alertas «Revisar», escribe por qué se aceptan. Si la carga cambia después (homologación, otra versión publicada), la
+ * aprobación deja de valer y este formulario vuelve a aparecer.
  */
-export function FormPublicar({ id, mesCompletoSugerido, ultimoMes, hayRevisar, bloqueo, version, reemplaza, agrega }: {
-  id: string; mesCompletoSugerido: boolean; ultimoMes: string; hayRevisar: boolean; bloqueo: string | null; version: number; reemplaza: string | null; agrega: string | null;
+export function FormAprobar({ id, mesCompletoSugerido, ultimoMes, revisar, bloqueo }: {
+  id: string; mesCompletoSugerido: boolean; ultimoMes: string; revisar: number; bloqueo: string | null;
+}) {
+  const [estado, accion, enviando] = useActionState(aprobarCarga, null);
+  return (
+    <form action={accion} className="space-y-3 border-t border-neutral-200 pt-4">
+      <input type="hidden" name="id" value={id} />
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold">1. Aprobar la carga</h3>
+        <p className="max-w-prose text-sm text-neutral-700">
+          Aprobar deja constancia de que las cifras de este archivo están revisadas. Todavía no cambia nada para el equipo: eso pasa al publicar.
+        </p>
+      </div>
+      <label className="flex max-w-prose items-start gap-2 text-sm">
+        <input type="checkbox" name="mesCompleto" defaultChecked={mesCompletoSugerido} className="mt-1 size-4" />
+        <span>{ultimoMes} está completo (mes cerrado). Si no, se marca como parcial y las comparaciones lo advierten.</span>
+      </label>
+      {revisar > 0 && (
+        <div className="max-w-prose space-y-1">
+          <label htmlFor={`motivo-${id}`} className="text-sm font-medium">
+            Por qué se acepta{revisar === 1 ? " la alerta «Revisar»" : `n las ${revisar} alertas «Revisar»`}
+          </label>
+          <Textarea id={`motivo-${id}`} name="motivo" rows={2} required minLength={10} maxLength={500}
+            placeholder="P. ej. «Octubre se reexportó con las notas de crédito; Ventas confirmó el cambio en Detalle»" />
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" disabled={enviando || !!bloqueo} aria-describedby={bloqueo ? `bloqueo-${id}` : undefined}>
+          {enviando ? "Aprobando…" : "Aprobar la carga"}
+        </Button>
+        {bloqueo && <p id={`bloqueo-${id}`} className="max-w-prose text-sm text-red-700">No se puede aprobar: {bloqueo}</p>}
+        <Aviso paso={estado} />
+      </div>
+    </form>
+  );
+}
+
+/** Quitar una aprobación vigente (con motivo), p. ej. si se aprobó por error. */
+export function AnularAprobacion({ id }: { id: string }) {
+  const [estado, accion, enviando] = useActionState(anularAprobacionCarga, null);
+  const [abierto, setAbierto] = useState(false);
+  if (!abierto) return <Button variant="ghost" onClick={() => setAbierto(true)}>Quitar la aprobación</Button>;
+  return (
+    <form action={accion} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="id" value={id} />
+      <Input name="motivo" required minLength={5} maxLength={300} placeholder="Motivo" aria-label="Motivo para quitar la aprobación" className="h-8 w-64" />
+      <Button type="submit" variant="outline" disabled={enviando}>Quitar</Button>
+      <Button type="button" variant="ghost" onClick={() => setAbierto(false)}>Cancelar</Button>
+      <Aviso paso={estado} />
+    </form>
+  );
+}
+
+/**
+ * Paso 2 de 2: publicar la carga aprobada. Dice qué va a cambiar (versión, meses que reemplaza y agrega); la base vuelve
+ * a comprobar que la aprobación sigue al día.
+ */
+export function FormPublicar({ id, version, reemplaza, agrega, bloqueo }: {
+  id: string; version: number; reemplaza: string | null; agrega: string | null; bloqueo: string | null;
 }) {
   const [estado, accion, enviando] = useActionState(publicarCarga, null);
   const cambios = [reemplaza && `reemplaza ${reemplaza}`, agrega && `agrega ${agrega}`].filter(Boolean).join(" y ");
@@ -118,7 +176,7 @@ export function FormPublicar({ id, mesCompletoSugerido, ultimoMes, hayRevisar, b
     <form action={accion} className="space-y-3 border-t border-neutral-200 pt-4">
       <input type="hidden" name="id" value={id} />
       <div className="space-y-1">
-        <h3 className="text-sm font-semibold">Publicar como v{version}</h3>
+        <h3 className="text-sm font-semibold">2. Publicar como v{version}</h3>
         <p className="max-w-prose text-sm text-neutral-700">
           Al publicar, v{version} {cambios || "queda como versión vigente"}. El dashboard, el resumen y el asistente cambian al instante para todo el
           equipo; la versión anterior queda en el historial y se puede volver a ella retirando esta.
@@ -126,24 +184,14 @@ export function FormPublicar({ id, mesCompletoSugerido, ultimoMes, hayRevisar, b
       </div>
       <Textarea name="notas" rows={2} maxLength={500} aria-label="Notas de la versión" placeholder="Notas de la versión (opcional): qué trae, quién exportó, observaciones…" />
       <label className="flex max-w-prose items-start gap-2 text-sm">
-        <input type="checkbox" name="mesCompleto" defaultChecked={mesCompletoSugerido} className="mt-1 size-4" />
-        <span>{ultimoMes} está completo (mes cerrado). Si no, se marca como parcial y las comparaciones lo advierten.</span>
-      </label>
-      {hayRevisar && (
-        <label className="flex max-w-prose items-start gap-2 text-sm">
-          <input type="checkbox" name="revisado" required className="mt-1 size-4" />
-          <span>Revisé cada alerta marcada «Revisar» y las cifras son correctas.</span>
-        </label>
-      )}
-      <label className="flex max-w-prose items-start gap-2 text-sm">
         <input type="checkbox" name="correo" className="mt-1 size-4" />
         <span>Enviar el resumen por correo a cada persona con acceso activo (el del último mes cerrado de v{version}).</span>
       </label>
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" size="lg" className="px-4" disabled={enviando || !!bloqueo} aria-describedby={bloqueo ? `bloqueo-${id}` : undefined}>
+        <Button type="submit" size="lg" className="px-4" disabled={enviando || !!bloqueo} aria-describedby={bloqueo ? `bloqueo-pub-${id}` : undefined}>
           {enviando ? "Publicando…" : `Publicar v${version}`}
         </Button>
-        {bloqueo && <p id={`bloqueo-${id}`} className="max-w-prose text-sm text-red-700">No se puede publicar: {bloqueo}</p>}
+        {bloqueo && <p id={`bloqueo-pub-${id}`} className="max-w-prose text-sm text-red-700">No se puede publicar: {bloqueo}</p>}
         <Aviso paso={estado} />
       </div>
     </form>

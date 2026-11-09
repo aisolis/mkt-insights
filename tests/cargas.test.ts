@@ -162,7 +162,24 @@ describe.skipIf(!url || !service)("carga mensual contra el Supabase local", () =
     expect(alertas[0]).toMatchObject({ nivel: "revisar", texto: expect.stringMatching(/^Reemplaza octubre 2026/) });
 
     const septiembreAntes = await kpi(vigenteAntes, 2026, 9);
-    const pub = await svc.schema("ventas").rpc("publicar", { p_carga: id, p_notas: "prueba automatizada", p_ultimo_mes_cerrado: true });
+    // Sin aprobación no se publica (V1-07).
+    const sinAprobar = await svc.schema("ventas").rpc("publicar", { p_carga: id, p_notas: "prueba automatizada" });
+    expect(sinAprobar.error?.message).toMatch(/no está aprobada/);
+    const aprobarCon = (huella: string | null) => svc.schema("ventas").rpc("aprobar_carga", {
+      p_carga: id, p_usuario: null, p_rol: "servicio", p_ultimo_mes_cerrado: true, p_alertas: [alertas[0].texto], p_motivo: "prueba automatizada de aprobación", p_huella: huella });
+    // Aceptar alertas «Revisar» pide motivo, y una huella vieja (la carga cambió mientras se revisaba) se rechaza.
+    const sinMotivo = await svc.schema("ventas").rpc("aprobar_carga", { p_carga: id, p_usuario: null, p_rol: "servicio", p_ultimo_mes_cerrado: true, p_alertas: ["x"], p_motivo: "corto" });
+    expect(sinMotivo.error?.message).toMatch(/motivo/);
+    expect((await aprobarCon("huella-vieja")).error?.message).toMatch(/cambió mientras se revisaba/);
+    const huella = (await svc.schema("ventas").rpc("huella_carga", { p_carga: id })).data as string;
+    expect((await aprobarCon(huella)).error).toBeNull();
+    const ap = (await svc.schema("ventas").rpc("aprobaciones", { p_cargas: [id] })).data;
+    expect(ap).toEqual([expect.objectContaining({ carga_id: id, rol: "servicio", al_dia: true, alertas: [alertas[0].texto] })]);
+    // Si la carga cambia después de aprobarla, la aprobación deja de valer y no se publica.
+    await svc.schema("ventas").from("aprobacion_carga").update({ huella: "otra" }).eq("carga_id", id).is("anulada_en", null);
+    expect((await svc.schema("ventas").rpc("publicar", { p_carga: id })).error?.message).toMatch(/cambió desde que se aprobó/);
+    expect((await aprobarCon(huella)).error).toBeNull();
+    const pub = await svc.schema("ventas").rpc("publicar", { p_carga: id, p_notas: "prueba automatizada", p_rol: "servicio" });
     expect(pub.error).toBeNull();
     const v = pub.data.version as number;
     versiones.push(v);
@@ -171,6 +188,9 @@ describe.skipIf(!url || !service)("carga mensual contra el Supabase local", () =
 
     const vig = (await svc.schema("ventas").rpc("version_vigente")).data;
     expect(vig.version).toBe(v);
+    const fila = (await svc.schema("ventas").from("publicacion").select("aprobacion_id, rol_publicacion, ultimo_mes_cerrado").eq("version", v).single()).data;
+    expect(fila?.aprobacion_id).toBeGreaterThan(ap[0].id); // la segunda aprobación, tras invalidar la primera
+    expect(fila).toMatchObject({ rol_publicacion: "servicio", ultimo_mes_cerrado: true });
     expect(vig.metadatos.periodos.at(-1)).toMatchObject({ anio: 2026, mes: 10, cerrado: true });
     expect((await kpi(v, 2026, 10)).venta_neta).toBe(42500);
     // Los demás meses no cambian (rutas_total sí: es de la versión y octubre trae otras rutas).

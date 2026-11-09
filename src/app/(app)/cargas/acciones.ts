@@ -4,7 +4,8 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requerirGestorCargas } from "@/lib/auth/acceso";
-import { conciliar, descartar, enviarResumenPublicado, MetaCarga, prepararCarga, publicar, retirar, type SubidaCarga } from "@/lib/cargas/servidor";
+import { rolGestion } from "@/lib/auth/reglas";
+import { anularAprobacion, aprobar, conciliar, descartar, enviarResumenPublicado, MetaCarga, prepararCarga, publicar, retirar, type SubidaCarga } from "@/lib/cargas/servidor";
 
 export type Estado = { error?: string; ok?: string } | null;
 
@@ -23,12 +24,29 @@ const listo = (r: { error?: string }, ok: string): Estado => {
   return { ok };
 };
 
+export async function aprobarCarga(_: Estado, form: FormData): Promise<Estado> {
+  const usuario = await requerirGestorCargas();
+  const id = z.uuid().safeParse(form.get("id"));
+  if (!id.success) return { error: "Carga no válida." };
+  const motivo = String(form.get("motivo") ?? "").trim().slice(0, 500) || null;
+  return listo(await aprobar(id.data, form.get("mesCompleto") === "on", motivo, usuario.id, rolGestion(usuario, "aprobar")), "Carga aprobada. Ya se puede publicar.");
+}
+
+export async function anularAprobacionCarga(_: Estado, form: FormData): Promise<Estado> {
+  const usuario = await requerirGestorCargas();
+  const id = z.uuid().safeParse(form.get("id"));
+  if (!id.success) return { error: "Carga no válida." };
+  const motivo = String(form.get("motivo") ?? "").trim();
+  if (motivo.length < 5) return { error: "Escribe por qué se quita la aprobación." };
+  return listo(await anularAprobacion(id.data, motivo.slice(0, 300), usuario.id), "Se quitó la aprobación.");
+}
+
 export async function publicarCarga(_: Estado, form: FormData): Promise<Estado> {
   const usuario = await requerirGestorCargas();
   const id = z.uuid().safeParse(form.get("id"));
   if (!id.success) return { error: "Carga no válida." };
   const notas = String(form.get("notas") ?? "").trim().slice(0, 500) || null;
-  const r = await publicar(id.data, notas, form.get("mesCompleto") === "on", form.get("revisado") === "on", usuario.id);
+  const r = await publicar(id.data, notas, usuario.id, rolGestion(usuario, "publicar"));
   if (r.error || !r.version) return { error: r.error ?? "No se pudo publicar." };
   revalidatePath("/cargas");
   revalidatePath("/", "layout"); // la cabecera y el dashboard muestran la versión vigente

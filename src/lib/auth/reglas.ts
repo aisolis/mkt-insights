@@ -38,4 +38,12 @@ export function esRutaPublica(ruta: string) {
 /** Cargar el cubo, publicar, retirar y conciliar versiones. */
 export const gestionaCargas = (u: Usuario) => u.esAdmin || u.esAprobador;
 
+/**
+ * Rol con el que la persona hace cada paso (V1-07): aprobar es la función del aprobador y publicar la del admin. Quien
+ * tiene los dos ejerce el que corresponde al paso; quien tiene uno solo, ese. Queda guardado en cada aprobación y versión.
+ */
+export type RolGestion = "admin" | "aprobador";
+export const rolGestion = (u: Usuario, paso: "aprobar" | "publicar"): RolGestion =>
+  paso === "aprobar" ? (u.esAprobador ? "aprobador" : "admin") : (u.esAdmin ? "admin" : "aprobador");
+
 export const NIVEL_TXT: Record<Nivel, string> = { estandar: "Estándar", plus: "Plus" };

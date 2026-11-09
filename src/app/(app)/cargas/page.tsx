@@ -4,10 +4,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { requerirAcceso } from "@/lib/auth/acceso";
 import { gestionaCargas } from "@/lib/auth/reglas";
 import { esParcial } from "@/lib/cargas/alertas";
-import { alertasDe, listarCargas, mesesDeCargas, versiones } from "@/lib/cargas/servidor";
-import type { Alerta, FilaCarga, Mes, Version } from "@/lib/cargas/tipos";
+import { alertasDe, aprobacionesDe, listarCargas, mesesDeCargas, versiones } from "@/lib/cargas/servidor";
+import type { Alerta, Aprobacion, FilaCarga, Mes, RolPaso, Version } from "@/lib/cargas/tipos";
 import { conteo, fechaCorta, fechaLocal, periodoCorto, periodoLargo } from "@/lib/format";
-import { Descartar, FormCargar, FormConciliar, FormPublicar, FormRetirar, Reintentar } from "./formularios";
+import { AnularAprobacion, Descartar, FormAprobar, FormCargar, FormConciliar, FormPublicar, FormRetirar, Reintentar } from "./formularios";
 
 /** Publicar recalcula los metadatos de la versión sobre todo el cubo (~15 s con 1 M de filas). */
 export const maxDuration = 300;
@@ -44,7 +44,9 @@ export default async function Cargas(props: PageProps<"/cargas">) {
   const historial = await versiones();
   const cargas = gestor ? (await listarCargas()).filter((c) => !["publicada", "retirada"].includes(c.estado)) : [];
   const validadas = cargas.filter((c) => c.estado === "validada").map((c) => c.id);
-  const [alertas, mesesCarga] = validadas.length ? await Promise.all([alertasDe(validadas), mesesDeCargas(validadas)]) : [new Map<string, Alerta[]>(), new Map<string, Mes[]>()];
+  const [alertas, mesesCarga, aprobaciones] = validadas.length
+    ? await Promise.all([alertasDe(validadas), mesesDeCargas(validadas), aprobacionesDe(validadas)])
+    : [new Map<string, Alerta[]>(), new Map<string, Mes[]>(), new Map<string, Aprobacion>()];
   const vigente = historial.find((v) => !v.retirada_en);
   const publicada = gestor ? historial.find((v) => String(v.version) === sp.publicada) : undefined;
   const correo = typeof sp.correo === "string" ? CORREO[sp.correo] : undefined;
@@ -75,7 +77,7 @@ export default async function Cargas(props: PageProps<"/cargas">) {
           <h2 className="text-sm font-semibold">Carga del mes</h2>
           <ol className="max-w-prose list-decimal space-y-0.5 pl-5 text-sm text-neutral-700">
             <li>Exporta del cubo el mes cerrado y súbelo aquí. Las columnas se reconocen por nombre (ver <Link href="/cargas/columnas" className="underline">Columnas del Excel</Link>).</li>
-            <li>Revisa las alertas: cambios contra lo publicado, saltos raros, canales nuevos.</li>
+            <li>Revisa las alertas (cambios contra lo publicado, saltos raros, canales nuevos) y aprueba la carga.</li>
             <li>Publica. Si algo salió mal, retira la versión y vuelve a regir la anterior.</li>
           </ol>
           <FormCargar />
@@ -89,7 +91,7 @@ export default async function Cargas(props: PageProps<"/cargas">) {
       {gestor && cargas.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-sm font-semibold">Cargas sin publicar</h2>
-          {cargas.map((c) => <TarjetaCarga key={c.id} c={c} alertas={alertas.get(c.id) ?? []} meses={mesesCarga.get(c.id) ?? []}
+          {cargas.map((c) => <TarjetaCarga key={c.id} c={c} alertas={alertas.get(c.id) ?? []} meses={mesesCarga.get(c.id) ?? []} aprobacion={aprobaciones.get(c.id)}
             siguiente={Math.max(0, ...historial.map((v) => v.version)) + 1} mesesVigente={vigente?.meses ?? []} />)}
         </section>
       )}
@@ -138,7 +140,7 @@ function FilaVersion({ v, vigente, gestor, retirable }: { v: Version; vigente: b
       </TableCell>
       <TableCell className="align-top">{fechaCorta(v.fecha_corte)}{!v.ultimo_mes_cerrado && <div className="text-xs text-neutral-500">último mes parcial</div>}</TableCell>
       <TableCell className="align-top text-xs">
-        {fechaLocal(v.publicado_en)}{v.publicado_por && <div>por {v.publicado_por}</div>}
+        {fechaLocal(v.publicado_en)}<Autoria v={v} />
       </TableCell>
       <TableCell className="max-w-96 align-top text-xs whitespace-normal">
         <div>{v.archivo} · {meses(v.meses)}</div>
@@ -175,7 +177,7 @@ function TarjetaVersion({ v, vigente, gestor, retirable }: { v: Version; vigente
       <div className="space-y-0.5 text-xs break-words">
         <div>{v.archivo} · {meses(v.meses)}</div>
         {v.meses_reemplazados.length > 0 && <div className="text-neutral-500">reemplazó {meses(v.meses_reemplazados)}</div>}
-        <div className="text-neutral-500">Publicada {fechaLocal(v.publicado_en)}{v.publicado_por && ` por ${v.publicado_por}`}</div>
+        <div className="text-neutral-500">Publicada {fechaLocal(v.publicado_en)}<Autoria v={v} /></div>
         {v.notas && <div className="text-neutral-600">{v.notas}</div>}
         {v.retirada_en && <div className="text-red-700">Retirada el {fechaLocal(v.retirada_en)}: {v.motivo_retiro}</div>}
         <div>{v.conciliada_bi ? `Conciliada con BI: ${v.conciliada_nota}` : "Sin conciliar con BI"} · <Link href={`/resumen?version=${v.version}`} className="text-neutral-700 underline">Resumen del mes</Link></div>
@@ -224,12 +226,32 @@ const TONO: Record<Alerta["nivel"], string> = {
 };
 const ETIQUETA: Record<Alerta["nivel"], string> = { bloqueo: "Bloquea", revisar: "Revisar", info: "Info" };
 
-function TarjetaCarga({ c, alertas, meses: m, siguiente, mesesVigente }: { c: FilaCarga; alertas: Alerta[]; meses: Mes[]; siguiente: number; mesesVigente: { anio: number; mes: number }[] }) {
+const ROL: Record<RolPaso, string> = { admin: "admin", aprobador: "aprobador", servicio: "script de Intelia" };
+const quien = (nombre: string | null, rol: RolPaso | null) => `${nombre ?? (rol === "servicio" ? "Intelia" : "alguien")}${rol ? ` (${ROL[rol]})` : ""}`;
+
+/** Quién aprobó y quién publicó (V1-07). Las versiones de antes de G11 solo tienen quién publicó. */
+function Autoria({ v }: { v: Version }) {
+  return (
+    <>
+      {v.aprobado_en && (
+        <div title={v.motivo_aprobacion ?? undefined}>
+          aprobó {quien(v.aprobado_por, v.rol_aprobacion)}{v.alertas_aceptadas > 0 && `, aceptó ${v.alertas_aceptadas} ${v.alertas_aceptadas === 1 ? "alerta" : "alertas"}`}
+        </div>
+      )}
+      {(v.publicado_por || v.rol_publicacion) && <div>publicó {quien(v.publicado_por, v.rol_publicacion)}</div>}
+    </>
+  );
+}
+
+function TarjetaCarga({ c, alertas, meses: m, siguiente, mesesVigente, aprobacion }: {
+  c: FilaCarga; alertas: Alerta[]; meses: Mes[]; siguiente: number; mesesVigente: { anio: number; mes: number }[]; aprobacion?: Aprobacion;
+}) {
   const enVigente = new Set(mesesVigente.map((x) => x.anio * 12 + x.mes));
   const orden = [...m].sort((a, b) => a.anio * 12 + a.mes - (b.anio * 12 + b.mes));
   const reemplaza = orden.filter((x) => enVigente.has(x.anio * 12 + x.mes)), agrega = orden.filter((x) => !enVigente.has(x.anio * 12 + x.mes));
   const estado = ESTADO_CARGA[c.estado] ?? { txt: c.estado, variante: "outline" as const };
-  const ultimo = [...m].sort((a, b) => a.anio * 12 + a.mes - (b.anio * 12 + b.mes)).at(-1);
+  const ultimo = orden.at(-1);
+  const bloqueo = alertas.some((a) => a.nivel === "bloqueo") ? "hay una alerta «Bloquea» arriba; corrige el archivo y súbelo de nuevo." : null;
   return (
     <div className="space-y-3 border border-neutral-200 bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -262,12 +284,35 @@ function TarjetaCarga({ c, alertas, meses: m, siguiente, mesesVigente }: { c: Fi
               Si BIA ya decidió a qué canal van, agrégalos en <Link href="/cargas/homologacion" className="underline">Homologación de canales</Link>: esta carga se actualiza al momento.
             </p>
           )}
-          {ultimo && (
-            <FormPublicar id={c.id} ultimoMes={periodoLargo(ultimo)} mesCompletoSugerido={!esParcial(ultimo)} version={siguiente}
-              reemplaza={reemplaza.length ? meses(reemplaza) : null} agrega={agrega.length ? meses(agrega) : null}
-              hayRevisar={alertas.some((a) => a.nivel === "revisar")}
-              bloqueo={alertas.some((a) => a.nivel === "bloqueo") ? "hay una alerta «Bloquea» arriba; corrige el archivo y súbelo de nuevo." : null} />
-          )}
+          {ultimo && (aprobacion?.al_dia ? (
+            <>
+              <div role="status" className="space-y-1 border-t border-neutral-200 pt-4 text-sm">
+                <p>
+                  <span className="font-semibold">1. Aprobada</span> por {quien(aprobacion.usuario, aprobacion.rol)} el {fechaLocal(aprobacion.creado_en)}
+                  {" · "}{periodoLargo(ultimo)} {aprobacion.ultimo_mes_cerrado ? "completo" : "parcial"}
+                </p>
+                {aprobacion.motivo && (
+                  <p className="max-w-prose text-neutral-600">
+                    Aceptó {aprobacion.alertas.length === 1 ? "la alerta «Revisar»" : `${aprobacion.alertas.length} alertas «Revisar»`}: «{aprobacion.motivo}»
+                  </p>
+                )}
+                <AnularAprobacion id={c.id} />
+              </div>
+              <FormPublicar id={c.id} version={siguiente} reemplaza={reemplaza.length ? meses(reemplaza) : null} agrega={agrega.length ? meses(agrega) : null}
+                bloqueo={bloqueo} />
+            </>
+          ) : (
+            <>
+              {aprobacion && (
+                <p role="status" className="max-w-prose border border-amber-300 bg-amber-50 px-2 py-1 text-sm text-amber-900">
+                  La aprobación que dio {quien(aprobacion.usuario, aprobacion.rol)} el {fechaLocal(aprobacion.creado_en)} ya no vale: la carga cambió después
+                  (homologación de canales u otra versión publicada). Revisa las alertas de nuevo y vuelve a aprobarla.
+                </p>
+              )}
+              <FormAprobar id={c.id} ultimoMes={periodoLargo(ultimo)} mesCompletoSugerido={!esParcial(ultimo)}
+                revisar={alertas.filter((a) => a.nivel === "revisar").length} bloqueo={bloqueo} />
+            </>
+          ))}
         </>
       )}
     </div>

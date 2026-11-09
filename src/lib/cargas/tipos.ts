@@ -14,8 +14,18 @@ export type FilaCarga = {
   filas_discrepancia: number | null; creado_en: string; subido_por: string | null;
 };
 
+export type RolPaso = "admin" | "aprobador" | "servicio";
+
+/** Aprobación vigente de una carga (G11): `al_dia` es falso si la carga cambió desde que se aprobó. */
+export type Aprobacion = {
+  id: number; carga_id: string; usuario: string | null; rol: RolPaso; creado_en: string; ultimo_mes_cerrado: boolean;
+  alertas: string[]; motivo: string | null; al_dia: boolean;
+};
+
 export type Version = {
   version: number; fecha_corte: string; publicado_en: string; archivo: string; notas: string | null; publicado_por: string | null;
+  rol_publicacion: RolPaso | null; aprobado_por: string | null; rol_aprobacion: RolPaso | null; aprobado_en: string | null;
+  motivo_aprobacion: string | null; alertas_aceptadas: number;
   ultimo_mes_cerrado: boolean; meses: { anio: number; mes: number }[] | null; meses_reemplazados: { anio: number; mes: number }[];
   conciliada_bi: boolean; conciliada_nota: string | null; conciliada_en: string | null; retirada_en: string | null; motivo_retiro: string | null;
 };

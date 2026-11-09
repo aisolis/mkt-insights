@@ -8,7 +8,7 @@ import { camposVacios, type ColumnasHoja } from "./columnas";
 import { canalesParaAlertas, mesesParaAlertas } from "./composicion";
 import { procesarCarga } from "./ingesta";
 import { correoResumen, datosResumen, rutaResumen, type FuenteResumen, type VersionResumen } from "./resumen";
-import { BUCKET_CARGAS, MAX_BYTES_CARGA, type Alerta, type FilaCarga, type Version } from "./tipos";
+import { BUCKET_CARGAS, MAX_BYTES_CARGA, type Alerta, type Aprobacion, type FilaCarga, type RolPaso, type Version } from "./tipos";
 
 /** Historial de versiones con la sesión de la persona (cualquiera con acceso). */
 export async function versiones(): Promise<Version[]> {
@@ -100,14 +100,48 @@ export async function prepararCarga(meta: z.infer<typeof MetaCarga>, subidoPor: 
 
 export const procesar = (id: string) => procesarCarga(createServiceClient(), id);
 
-export async function publicar(id: string, notas: string | null, ultimoMesCerrado: boolean, revisoAlertas: boolean, usuario: string): Promise<{ error?: string; version?: number }> {
+/** Última aprobación sin anular de cada carga, con su autor y si sigue al día. */
+export async function aprobacionesDe(cargaIds: string[]): Promise<Map<string, Aprobacion>> {
+  if (!cargaIds.length) return new Map();
+  const { data, error } = await createServiceClient().schema("ventas").rpc("aprobaciones", { p_cargas: cargaIds });
+  if (error) throw new Error(`aprobaciones: ${error.message}`);
+  return new Map((data as Aprobacion[]).map((a) => [a.carga_id, a]));
+}
+
+/**
+ * Aprobar (V1-07): quien aprueba acepta las alertas «Revisar» que ve ahora, con un motivo, y declara si el último mes
+ * está completo. Las alertas se calculan contra una huella de la carga; si la carga cambia entretanto, la base lo rechaza.
+ */
+export async function aprobar(id: string, ultimoMesCerrado: boolean, motivo: string | null, usuario: string, rol: RolPaso): Promise<{ error?: string }> {
+  const svc = createServiceClient();
+  const huella = await svc.schema("ventas").rpc("huella_carga", { p_carga: id });
+  if (huella.error) return { error: `No se pudo aprobar (${huella.error.message}).` };
   const alertas = (await alertasDe([id])).get(id) ?? [];
   if (alertas.some((a) => a.nivel === "bloqueo")) return { error: "La carga tiene bloqueos: corrige el archivo y vuelve a subirlo." };
-  if (alertas.some((a) => a.nivel === "revisar") && !revisoAlertas) return { error: "Confirma que revisaste las alertas antes de publicar." };
-  const { data, error } = await createServiceClient().schema("ventas").rpc("publicar", { p_carga: id, p_notas: notas, p_usuario: usuario, p_ultimo_mes_cerrado: ultimoMesCerrado });
-  if (error) return { error: `No se pudo publicar (${error.message}).` };
+  const revisar = alertas.filter((a) => a.nivel === "revisar").map((a) => a.texto);
+  if (revisar.length && (motivo?.length ?? 0) < 10) return { error: "Escribe por qué se aceptan las alertas «Revisar» (al menos 10 caracteres)." };
+  const { error } = await svc.schema("ventas").rpc("aprobar_carga", {
+    p_carga: id, p_usuario: usuario, p_rol: rol, p_ultimo_mes_cerrado: ultimoMesCerrado, p_alertas: revisar, p_motivo: motivo, p_huella: huella.data,
+  });
+  return error ? { error: mensajeBase(error.message) } : {};
+}
+
+export async function anularAprobacion(id: string, motivo: string, usuario: string): Promise<{ error?: string }> {
+  const { error } = await createServiceClient().schema("ventas").rpc("anular_aprobacion", { p_carga: id, p_usuario: usuario, p_motivo: motivo });
+  return error ? { error: mensajeBase(error.message) } : {};
+}
+
+/** Publicar una carga aprobada y al día. La base vuelve a comprobar la aprobación y la huella dentro de la transacción. */
+export async function publicar(id: string, notas: string | null, usuario: string, rol: RolPaso): Promise<{ error?: string; version?: number }> {
+  const alertas = (await alertasDe([id])).get(id) ?? [];
+  if (alertas.some((a) => a.nivel === "bloqueo")) return { error: "La carga tiene bloqueos: corrige el archivo y vuelve a subirlo." };
+  const { data, error } = await createServiceClient().schema("ventas").rpc("publicar", { p_carga: id, p_notas: notas, p_usuario: usuario, p_rol: rol });
+  if (error) return { error: `No se pudo publicar: ${mensajeBase(error.message)}.` };
   return { version: (data as { version: number }).version };
 }
+
+/** Los mensajes de las funciones de la base, con mayúscula inicial y sin punto final duplicado. */
+const mensajeBase = (m: string) => (m.charAt(0).toUpperCase() + m.slice(1)).replace(/\.$/, "");
 
 export async function retirar(version: number, motivo: string, usuario: string): Promise<{ error?: string }> {
   const { error } = await createServiceClient().schema("ventas").rpc("retirar_version", { p_version: version, p_motivo: motivo, p_usuario: usuario });

@@ -70,13 +70,23 @@ Si BIA todavía no decidió (hoy pasa con SEMI-MAYOREO y PENDIENTE), **no lo hom
 
 Los meses ya publicados **no cambian** al editar la homologación: siguen con el canal con que se publicaron. Para corregirlos, vuelve a subir el Excel de esos meses y publícalo; queda como una versión nueva. Cada cambio queda en el historial de la página (quién, cuándo, antes y después, y qué cargas se actualizaron).
 
-## 4. Publicar
+## 4. Aprobar y publicar
+
+Son dos pasos. Los puede hacer la misma persona; cada uno queda en el historial con quién lo hizo y con qué rol (aprobador o admin).
+
+**Aprobar la carga**
+
+1. Marca si el último mes está **completo**. Si lo dejas sin marcar, el dashboard lo muestra como parcial y las comparaciones lo advierten.
+2. Si hay alertas «Revisar», escribe por qué se aceptan (por ejemplo, «Octubre se reexportó con las notas de crédito; Ventas confirmó el cambio en Detalle»). El motivo y las alertas quedan guardados con la versión.
+3. Pulsa **Aprobar la carga**. Todavía no cambia nada para el equipo.
+
+Si después de aprobar cambia algo de la carga (una homologación de canales o se publica otra versión), la aprobación deja de valer: la tarjeta lo dice y hay que revisar las alertas y aprobar de nuevo. **Quitar la aprobación** (con motivo) la anula si se aprobó por error.
+
+**Publicar**
 
 1. Escribe una nota corta (qué trae, quién exportó, algo que el equipo deba saber).
-2. Marca si el último mes está **completo**. Si lo dejas sin marcar, el dashboard lo muestra como parcial y las comparaciones lo advierten.
-3. Si hubo alertas de tipo «Revisar», confirma que las revisaste.
-4. Si quieres avisar al equipo, marca **Enviar el resumen por correo al equipo**. Llega a todas las personas con acceso activo, una por una, con el resumen del último mes cerrado y el enlace. Solo se envía desde la plataforma en producción; en desarrollo no se envían correos.
-5. Pulsa **Publicar versión**. Tarda unos segundos.
+2. Si quieres avisar al equipo, marca **Enviar el resumen por correo**. Llega a todas las personas con acceso activo, una por una, con el resumen del último mes cerrado y el enlace. Solo se envía desde la plataforma en producción; en desarrollo no se envían correos.
+3. Pulsa **Publicar vN**. Tarda unos segundos.
 
 Desde ese momento, el dashboard y el asistente muestran la versión nueva. La cabecera indica el número de versión y la fecha de corte.
 
