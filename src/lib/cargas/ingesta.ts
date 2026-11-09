@@ -119,7 +119,8 @@ export const MAX_CUARENTENA = 20;
 
 /** Lee el Excel e inserta las filas de las hojas con las columnas configuradas; las demás hojas se saltan y se
  * informan. Error con hoja y fila si una fila no cuadra, o si ninguna hoja tiene las columnas. */
-export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada: string | Readable, avance?: (n: number) => void | Promise<void>): Promise<Conteo> {
+export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada: string | Readable, avance?: (n: number) => void | Promise<void>,
+  intento?: number): Promise<Conteo> {
   const [{ data: h, error: eh }, mapeo] = await Promise.all([
     svc.schema("ventas").from("homologacion").select("valor_origen, valor_homologado").eq("dimension", "canal"),
     leerMapeo(svc),
@@ -134,8 +135,15 @@ export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada:
     if (!lote.length) return;
     // Antes de insertar: si `avance` lanza (otro intento tomó la carga, S30), este lote no se escribe.
     await avance?.(c.cargadas + lote.length);
-    const { error } = await svc.schema("ventas").from("hecho").insert(lote);
-    if (error) throw new Error(`insertar filas: ${error.message}`);
+    if (intento !== undefined) {
+      // Con intento (app): la base inserta solo si la carga sigue siendo de este intento, bajo bloqueo (S30).
+      const { data, error } = await svc.schema("ventas").rpc("insertar_lote", { p_carga: cargaId, p_intento: intento, p_filas: lote });
+      if (error) throw new Error(`insertar filas: ${error.message}`);
+      if (data !== true) throw new CargaTomada();
+    } else {
+      const { error } = await svc.schema("ventas").from("hecho").insert(lote);
+      if (error) throw new Error(`insertar filas: ${error.message}`);
+    }
     c.cargadas += lote.length;
     lote = [];
   };
@@ -232,7 +240,18 @@ export class CargaTomada extends Error {
 /** Cierra la carga en la base (totales por mes, resumen, estado validada) con los conteos de la ingesta. `intento`:
  * solo si la carga sigue siendo de ese intento (sin él, el script del histórico, que crea su propia carga). */
 export async function cerrarCarga(svc: SupabaseClient, cargaId: string, c: Conteo, intento?: number) {
-  if (intento !== undefined && !(await latir(svc, cargaId, intento, "calculando totales", c.cargadas))) throw new CargaTomada();
+  if (intento !== undefined) {
+    if (!(await latir(svc, cargaId, intento, "calculando totales", c.cargadas))) throw new CargaTomada();
+    // Todo el cierre en una transacción que comprueba el intento con la fila de la carga bloqueada.
+    const { data, error } = await svc.schema("ventas").rpc("cerrar_carga_intento", {
+      p_carga: cargaId, p_intento: intento, p_cuarentena: c.cuarentena,
+      p_conteos: { filas_leidas: c.leidas, filas_vacias: c.vacias, filas_cargadas: c.cargadas, filas_duplicadas: c.duplicados,
+        filas_discrepancia: c.discrepancias, fechas_serial: c.seriales, hojas_ignoradas: c.hojasIgnoradas, columnas: c.columnas },
+    });
+    if (error) throw new Error(`cerrar carga: ${error.message}`);
+    if (data !== true) throw new CargaTomada();
+    return;
+  }
   const up = await svc.schema("ventas").from("carga").update({
     filas_leidas: c.leidas, filas_vacias: c.vacias, filas_cargadas: c.cargadas,
     filas_duplicadas: c.duplicados, filas_discrepancia: c.discrepancias, fechas_serial: c.seriales, hojas_ignoradas: c.hojasIgnoradas,
@@ -251,8 +270,9 @@ export async function cerrarCarga(svc: SupabaseClient, cargaId: string, c: Conte
 /** Si algo falla, la carga queda con su error y sin filas a medias. Con `intento`, solo si la carga sigue siendo suya. */
 export async function fallarCarga(svc: SupabaseClient, cargaId: string, error: string, intento?: number) {
   if (intento !== undefined) {
-    const { data } = await svc.schema("ventas").from("carga").select("intento, estado").eq("id", cargaId).single();
-    if (data?.intento !== intento || data?.estado !== "procesando") return;
+    const { data } = await svc.schema("ventas").rpc("fallar_carga_intento", { p_carga: cargaId, p_intento: intento, p_error: error });
+    if (data !== true) console.info(`[cargas] ${cargaId}: el intento ${intento} ya no es el dueño; no se marca el error`);
+    return;
   }
   await svc.schema("ventas").from("hecho").delete().eq("carga_id", cargaId);
   await svc.schema("ventas").from("fila_cuarentena").delete().eq("carga_id", cargaId);
@@ -325,17 +345,20 @@ export async function ejecutarCarga(svc: SupabaseClient, cargaId: string, intent
   const otra = await svc.schema("ventas").from("carga").select("nombre_archivo, estado").eq("sha256", sha256).neq("id", cargaId).neq("estado", "con_errores").maybeSingle();
   if (otra.data) return fallar(`Este archivo ya se cargó («${otra.data.nombre_archivo}», ${otra.data.estado}).`);
 
-  const marca = await svc.schema("ventas").from("carga").update({ sha256, bytes: bytes.length }).eq("id", cargaId).eq("intento", intento);
+  const marca = await svc.schema("ventas").from("carga").update({ sha256, bytes: bytes.length }).eq("id", cargaId).eq("intento", intento).select("id");
   if (marca.error) return fallar(`No se pudo marcar la carga (${marca.error.message}).`);
-  await svc.schema("ventas").from("hecho").delete().eq("carga_id", cargaId); // reintento: sin restos del intento anterior
+  if (!marca.data?.length) return { estado: "con_errores", error: new CargaTomada().message };
   try {
+    // Reintento: sin restos del intento anterior; la base borra solo si la carga sigue siendo de este intento.
+    const limpia = await svc.schema("ventas").rpc("limpiar_carga", { p_carga: cargaId, p_intento: intento });
+    if (limpia.error) throw new Error(`limpiar carga: ${limpia.error.message}`);
+    if (limpia.data !== true) throw new CargaTomada();
     if (!(await latir(svc, cargaId, intento, "leyendo filas", 0))) throw new CargaTomada();
     // Señal cada lote (~1000 filas) con el avance; si la carga ya es de otro intento, se corta antes del siguiente lote.
     const conteo = await ingerirXlsx(svc, cargaId, Readable.from(await ordenarXlsx(bytes)), async (n) => {
       if (!(await latir(svc, cargaId, intento, "leyendo filas", n))) throw new CargaTomada();
-    });
+    }, intento);
     await cerrarCarga(svc, cargaId, conteo, intento);
-    await svc.schema("ventas").from("carga").update({ etapa: null, latido_en: null }).eq("id", cargaId).eq("intento", intento);
     return { estado: "validada", conteo };
   } catch (e) {
     if (e instanceof CargaTomada) return { estado: "con_errores", error: e.message };

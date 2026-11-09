@@ -108,7 +108,10 @@ describe.skipIf(!url || !service)("carga mensual contra el Supabase local", () =
     await svc.schema("ventas").from("carga").update({ latido_en: new Date(Date.now() - 3 * 60_000).toISOString() }).eq("id", id);
     const dos = await tomar(); // sin señal 3 minutos: se retoma
     expect(dos).toBe(uno! + 1);
-    expect(await latir(uno!)).toBe(false); // el intento viejo queda fuera
+    expect(await latir(uno!)).toBe(false); // el intento viejo queda fuera, también para borrar, insertar y fallar
+    for (const [fn, args] of [["limpiar_carga", {}], ["insertar_lote", { p_filas: [] }], ["fallar_carga_intento", { p_error: "x" }]] as const) {
+      expect((await svc.schema("ventas").rpc(fn, { p_carga: id, p_intento: uno, ...args })).data).toBe(false);
+    }
     expect(await ejecutarCarga(svc, id, uno!)).toMatchObject({ estado: "con_errores", error: expect.stringMatching(/Otro proceso tomó/) });
     expect((await svc.schema("ventas").from("hecho").select("id", { count: "exact", head: true }).eq("carga_id", id)).count).toBe(0);
     expect(await ejecutarCarga(svc, id, dos!)).toMatchObject({ estado: "validada", conteo: { cargadas: 3 } });
