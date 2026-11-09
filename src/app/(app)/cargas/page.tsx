@@ -6,7 +6,7 @@ import { gestionaCargas } from "@/lib/auth/reglas";
 import { esParcial } from "@/lib/cargas/alertas";
 import type { ControlBi } from "@/lib/cargas/control-bi";
 import { cargaDeVersion, controlesDe } from "@/lib/cargas/control-servidor";
-import { alertasDe, aprobacionesDe, listarCargas, mesesDeCargas, versiones } from "@/lib/cargas/servidor";
+import { alertasDe, aprobacionesDe, cuarentenaDe, listarCargas, mesesDeCargas, versiones, type FilaCuarentena } from "@/lib/cargas/servidor";
 import type { Alerta, Aprobacion, FilaCarga, Mes, RolPaso, Version } from "@/lib/cargas/tipos";
 import { conteo, fechaCorta, fechaLocal, periodoCorto, periodoLargo } from "@/lib/format";
 import { SeccionControl } from "./control";
@@ -54,6 +54,7 @@ export default async function Cargas(props: PageProps<"/cargas">) {
   const [alertas, mesesCarga, aprobaciones, controles] = conControl.length
     ? await Promise.all([alertasDe(validadas), mesesDeCargas(validadas), aprobacionesDe(validadas), controlesDe(conControl)])
     : [new Map<string, Alerta[]>(), new Map<string, Mes[]>(), new Map<string, Aprobacion>(), new Map<string, ControlBi>()];
+  const cuarentena = await cuarentenaDe(cargas.filter((c) => c.estado === "validada" && c.filas_cuarentena > 0).map((c) => c.id));
   const publicada = gestor ? historial.find((v) => String(v.version) === sp.publicada) : undefined;
   const correo = typeof sp.correo === "string" ? CORREO[sp.correo] : undefined;
 
@@ -97,7 +98,7 @@ export default async function Cargas(props: PageProps<"/cargas">) {
       {gestor && cargas.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-sm font-semibold">Cargas sin publicar</h2>
-          {cargas.map((c) => <TarjetaCarga key={c.id} c={c} alertas={alertas.get(c.id) ?? []} meses={mesesCarga.get(c.id) ?? []} aprobacion={aprobaciones.get(c.id)} control={controles.get(c.id)}
+          {cargas.map((c) => <TarjetaCarga key={c.id} c={c} alertas={alertas.get(c.id) ?? []} meses={mesesCarga.get(c.id) ?? []} aprobacion={aprobaciones.get(c.id)} control={controles.get(c.id)} cuarentena={cuarentena.get(c.id) ?? []}
             siguiente={Math.max(0, ...historial.map((v) => v.version)) + 1} mesesVigente={vigente?.meses ?? []} />)}
         </section>
       )}
@@ -255,8 +256,9 @@ function Autoria({ v }: { v: Version }) {
   );
 }
 
-function TarjetaCarga({ c, alertas, meses: m, siguiente, mesesVigente, aprobacion, control }: {
-  c: FilaCarga; alertas: Alerta[]; meses: Mes[]; siguiente: number; mesesVigente: { anio: number; mes: number }[]; aprobacion?: Aprobacion; control?: ControlBi;
+function TarjetaCarga({ c, alertas, meses: m, siguiente, mesesVigente, aprobacion, control, cuarentena }: {
+  c: FilaCarga; alertas: Alerta[]; meses: Mes[]; siguiente: number; mesesVigente: { anio: number; mes: number }[]; aprobacion?: Aprobacion;
+  control?: ControlBi; cuarentena: FilaCuarentena[];
 }) {
   const enVigente = new Set(mesesVigente.map((x) => x.anio * 12 + x.mes));
   const orden = [...m].sort((a, b) => a.anio * 12 + a.mes - (b.anio * 12 + b.mes));
@@ -295,6 +297,19 @@ function TarjetaCarga({ c, alertas, meses: m, siguiente, mesesVigente, aprobacio
             <p className="text-xs text-neutral-600">
               Si BIA ya decidió a qué canal van, agrégalos en <Link href="/cargas/homologacion" className="underline">Homologación de canales</Link>: esta carga se actualiza al momento.
             </p>
+          )}
+          {cuarentena.length > 0 && (
+            <details className="text-sm">
+              <summary className="inline-flex min-h-8 cursor-pointer items-center underline underline-offset-2">
+                {c.filas_cuarentena === 1 ? "Ver la fila en cuarentena" : `Ver las ${conteo(c.filas_cuarentena)} filas en cuarentena`}
+              </summary>
+              <ul className="mt-1 max-h-64 max-w-prose space-y-0.5 overflow-y-auto border border-neutral-200 p-2 text-xs">
+                {cuarentena.map((x) => (
+                  <li key={`${x.hoja}-${x.fila}`}>Hoja «{x.hoja}», fila {x.fila}: {x.motivo.toLowerCase()} «{x.valor}»</li>
+                ))}
+                {c.filas_cuarentena > cuarentena.length && <li className="text-neutral-500">… y {conteo(c.filas_cuarentena - cuarentena.length)} más.</li>}
+              </ul>
+            </details>
           )}
           <SeccionControl cargaId={c.id} control={control} titulo="Control de BI" />
           {ultimo && (aprobacion?.al_dia ? (

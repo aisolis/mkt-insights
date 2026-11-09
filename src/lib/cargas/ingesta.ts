@@ -30,10 +30,15 @@ const txt = (v: unknown): string => {
 };
 const sinFormula = (v: unknown) => (v !== null && typeof v === "object" && !(v instanceof Date) && "result" in (v as object) ? (v as { result: unknown }).result : v);
 const codigo = (v: unknown) => { const x = sinFormula(v); return typeof x === "number" ? String(Math.trunc(x)) : txt(x); };
+/** Celda que no se entiende: la fila va a cuarentena (S29) con el dato y lo que traía la celda, nada más. */
+class CeldaInvalida extends Error {
+  constructor(readonly valor: string, readonly motivo: string) { super(`${motivo} «${valor}»`); }
+}
+const recorte = (s: string) => (s.length > 60 ? `${s.slice(0, 57)}…` : s);
 const num = (v: unknown) => {
   const x = sinFormula(v);
   const n = typeof x === "number" ? x : Number(txt(x).replace(/,/g, ""));
-  if (Number.isNaN(n)) throw new Error(`valor numérico inválido: ${txt(x)}`);
+  if (Number.isNaN(n)) throw new CeldaInvalida(recorte(txt(x)), "valor numérico inválido");
   return n;
 };
 function fecha(v: unknown): { d: Date; serial: boolean } {
@@ -41,7 +46,7 @@ function fecha(v: unknown): { d: Date; serial: boolean } {
   if (x instanceof Date) return { d: x, serial: false };
   const n = Number(x);
   if (txt(x) !== "" && !Number.isNaN(n)) return { d: new Date(Date.UTC(1899, 11, 30) + n * 86400000), serial: true }; // S9
-  throw new Error(`fecha inválida: ${txt(x)}`);
+  throw new CeldaInvalida(recorte(txt(x)), "fecha inválida");
 }
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -103,8 +108,14 @@ async function recorrer(entrada: string | Readable, m: MapeoCarga,
  * publicar. columnas: cómo se leyó cada hoja (queda en la carga). */
 export type Conteo = {
   leidas: number; vacias: number; cargadas: number; duplicados: number; discrepancias: number; seriales: number;
-  desde: string; hasta: string; hojasIgnoradas: string[]; columnas: ColumnasHoja[];
+  desde: string; hasta: string; hojasIgnoradas: string[]; columnas: ColumnasHoja[]; cuarentena: FilaCuarentena[];
 };
+
+/** Fila que no se cargó por una celda inválida (S29). */
+export type FilaCuarentena = { hoja: string; fila: number; campo: Campo; valor: string; motivo: string };
+
+/** Más de esto (y más del 1 % de las filas) no son celdas sueltas sino una exportación mal hecha: la carga falla. */
+export const MAX_CUARENTENA = 20;
 
 /** Lee el Excel e inserta las filas de las hojas con las columnas configuradas; las demás hojas se saltan y se
  * informan. Error con hoja y fila si una fila no cuadra, o si ninguna hoja tiene las columnas. */
@@ -116,7 +127,7 @@ export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada:
   if (eh) throw new Error(`homologación: ${eh.message}`);
   const homol = new Map(h.map((r) => [r.valor_origen, r.valor_homologado]));
   const vistos = new Set<string>();
-  const c: Conteo = { leidas: 0, vacias: 0, cargadas: 0, duplicados: 0, discrepancias: 0, seriales: 0, desde: "9999-12-31", hasta: "0000-01-01", hojasIgnoradas: [], columnas: [] };
+  const c: Conteo = { leidas: 0, vacias: 0, cargadas: 0, duplicados: 0, discrepancias: 0, seriales: 0, desde: "9999-12-31", hasta: "0000-01-01", hojasIgnoradas: [], columnas: [], cuarentena: [] };
   let lote: Record<string, unknown>[] = [];
 
   const vaciar = async () => {
@@ -135,13 +146,17 @@ export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada:
     const v = (campo: Campo) => { const i = l.indices[campo]; return i === undefined ? undefined : vals[i]; };
     const t = (campo: Campo) => txt(v(campo));
     const cod = (campo: Campo) => codigo(v(campo));
+    // Cada celda numérica o de fecha dice de qué dato es si falla.
+    const de = <T,>(campo: Campo, leer: (x: unknown) => T): T => {
+      try { return leer(v(campo)); } catch (e) { if (e instanceof CeldaInvalida) Object.assign(e, { campo }); throw e; }
+    };
     try {
-      const f = fecha(v("fecha"));
+      const f = de("fecha", fecha);
       if (f.serial) c.seriales++;
       const d = iso(f.d);
       if (d < c.desde) c.desde = d;
       if (d > c.hasta) c.hasta = d;
-      const bruta = num(v("venta_bruta")), desc = num(v("descuentos")), neta = num(v("venta_neta"));
+      const bruta = de("venta_bruta", num), desc = de("descuentos", num), neta = de("venta_neta", num);
       const discrepancia = Math.abs(bruta - desc - neta) > 0.01;
       if (discrepancia) c.discrepancias++;
       const canalOrigen = t("canal_origen");
@@ -153,8 +168,8 @@ export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada:
         cliente_codigo: cod("cliente_codigo"), cliente_nombre: t("cliente_nombre"), zona: t("zona"), documento: cod("documento"),
         grupo: t("grupo"), canal_origen: canalOrigen, canal: homol.get(canalOrigen) ?? canalOrigen,
         art_codigo: cod("art_codigo"), art_descrip: t("art_descrip"),
-        cantidad: num(v("cantidad")), venta_bruta: bruta, descuentos: desc, venta_neta: neta, kg: num(v("kg")),
-        fardos_caja: fardos == null || txt(fardos) === "" ? null : num(fardos),
+        cantidad: de("cantidad", num), venta_bruta: bruta, descuentos: desc, venta_neta: neta, kg: de("kg", num),
+        fardos_caja: fardos == null || txt(fardos) === "" ? null : de("fardos_caja", num),
         subgrupo: t("subgrupo"), sucursal: t("sucursal"),
         flag_discrepancia: discrepancia, flag_fecha_serial: f.serial, flag_duplicado: false,
       };
@@ -162,6 +177,11 @@ export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada:
       if (vistos.has(clave)) { fila.flag_duplicado = true; c.duplicados++; } else vistos.add(clave); // S3: se conserva y se marca
       lote.push(fila);
     } catch (e) {
+      if (e instanceof CeldaInvalida) {
+        const campo = (e as CeldaInvalida & { campo: Campo }).campo;
+        c.cuarentena.push({ hoja, fila: numero, campo, valor: e.valor, motivo: `${CAMPOS[campo].etiqueta}: ${e.motivo}` });
+        return;
+      }
       throw new Error(`Hoja «${hoja}», fila ${numero}: ${e instanceof Error ? e.message : e}`);
     }
     if (lote.length >= LOTE) await vaciar();
@@ -189,7 +209,12 @@ export async function ingerirXlsx(svc: SupabaseClient, cargaId: string, entrada:
       ? `${motivo} Si la columna cambió de nombre, agrégalo en Cargas → Columnas del Excel y pulsa Reintentar.`
       : "El archivo no tiene hojas con datos de venta.");
   }
-  if (!c.cargadas) throw new Error("El archivo no tiene filas de venta.");
+  const q = c.cuarentena;
+  if (q.length > MAX_CUARENTENA && q.length > (c.cargadas + q.length) * 0.01) {
+    const ej = q.slice(0, 3).map((x) => `hoja «${x.hoja}», fila ${x.fila}: ${x.motivo.toLowerCase()} «${x.valor}»`).join("; ");
+    throw new Error(`${q.length.toLocaleString("es-HN")} filas tienen celdas que no se entienden (más del 1 %): revisa la exportación. Por ejemplo, ${ej}.`);
+  }
+  if (!c.cargadas) throw new Error(q.length ? `Ninguna fila se pudo cargar: ${q[0].motivo.toLowerCase()} «${q[0].valor}» en la hoja «${q[0].hoja}», fila ${q[0].fila}.` : "El archivo no tiene filas de venta.");
   return c;
 }
 
@@ -203,9 +228,14 @@ export async function cerrarCarga(svc: SupabaseClient, cargaId: string, c: Conte
   const up = await svc.schema("ventas").from("carga").update({
     filas_leidas: c.leidas, filas_vacias: c.vacias, filas_cargadas: c.cargadas,
     filas_duplicadas: c.duplicados, filas_discrepancia: c.discrepancias, fechas_serial: c.seriales, hojas_ignoradas: c.hojasIgnoradas,
-    columnas: c.columnas,
+    columnas: c.columnas, filas_cuarentena: c.cuarentena.length,
   }).eq("id", cargaId);
   if (up.error) throw new Error(`carga: ${up.error.message}`);
+  await svc.schema("ventas").from("fila_cuarentena").delete().eq("carga_id", cargaId);
+  for (let i = 0; i < c.cuarentena.length; i += LOTE) {
+    const { error } = await svc.schema("ventas").from("fila_cuarentena").insert(c.cuarentena.slice(i, i + LOTE).map((x) => ({ carga_id: cargaId, ...x })));
+    if (error) throw new Error(`cuarentena: ${error.message}`);
+  }
   const { error } = await svc.schema("ventas").rpc("cerrar_carga", { p_carga: cargaId });
   if (error) throw new Error(`cerrar carga: ${error.message}`);
 }
@@ -213,6 +243,7 @@ export async function cerrarCarga(svc: SupabaseClient, cargaId: string, c: Conte
 /** Si algo falla, la carga queda con su error y sin filas a medias. */
 export async function fallarCarga(svc: SupabaseClient, cargaId: string, error: string) {
   await svc.schema("ventas").from("hecho").delete().eq("carga_id", cargaId);
+  await svc.schema("ventas").from("fila_cuarentena").delete().eq("carga_id", cargaId);
   await svc.schema("ventas").from("carga").update({ estado: "con_errores", error }).eq("id", cargaId);
 }
 

@@ -30,7 +30,7 @@ Si sale un error, el mensaje dice la hoja y la fila. Los más comunes:
 |---|---|
 | «falta la columna de …» o «hay varias columnas de …» | Una columna cambió de nombre, no vino o viene dos veces. El mensaje dice qué nombres se aceptan y qué encabezados trae el archivo. Si solo cambió el nombre, agrégalo en **Columnas del Excel**, prueba el archivo ahí mismo y pulsa **Reintentar**; si falta, vuelve a exportar. |
 | «Este archivo ya se cargó» | Ese mismo archivo ya está en la plataforma. No hace falta subirlo otra vez. |
-| «fecha inválida» o «valor numérico inválido» | Hay una celda con texto donde va una fecha o un número. Corrige la fila indicada y vuelve a exportar. |
+| «… filas tienen celdas que no se entienden (más del 1 %)» | Muchas celdas con texto donde va una fecha o un número: la exportación salió mal. Vuelve a exportar. |
 | «No se encontró el archivo subido» | La subida se cortó. Pulsa **Reintentar** o **Descartar** y vuelve a subirlo. |
 
 ## 3. Revisar las alertas
@@ -55,6 +55,8 @@ Cuando la carga queda **Lista para publicar**, la plataforma la compara con lo q
 | El mes es nuevo | Promedio de los 3 meses anteriores publicados | 25 % |
 
 Se ignoran los canales chicos (menos de 3 % de la venta neta del mes, en el archivo y en la referencia). No se compara un mes nuevo parcial, ni un mes que reemplaza a otro con distintos días (eso ya lo dicen las alertas del mes). Del promedio salen los meses publicados como parciales. Ejemplo: «Octubre 2026: Detalle baja 38 % frente al promedio de los 3 meses anteriores (L 1.2 M contra L 1.9 M)». También avisa si un canal con peso desaparece o aparece.
+
+**Filas en cuarentena.** Si unas pocas filas traen una celda que no se entiende (texto donde va una fecha o un número), la carga sigue: esas filas no se cargan, quedan en cuarentena y sale una alerta «Revisar» con la hoja, la fila, el dato y lo que traía la celda (**Ver las filas en cuarentena**). Sus ventas no están en los totales. Lo mejor es corregirlas en el cubo y volver a exportar; si se publica así, el motivo de la aprobación debe decirlo. Si son más del 1 % de las filas (y más de 20), la carga falla.
 
 Si una alerta no tiene explicación, no publiques: descarta la carga y revisa la exportación.
 

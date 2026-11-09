@@ -11,7 +11,7 @@ export type Alerta = { nivel: "bloqueo" | "revisar" | "info"; texto: string };
 export type FilaCarga = {
   id: string; nombre_archivo: string; estado: string; error: string | null; bytes: number | null;
   periodo_desde: string | null; periodo_hasta: string | null; filas_cargadas: number | null; filas_duplicadas: number | null;
-  filas_discrepancia: number | null; creado_en: string; subido_por: string | null;
+  filas_discrepancia: number | null; filas_cuarentena: number; creado_en: string; subido_por: string | null;
 };
 
 export type RolPaso = "admin" | "aprobador" | "servicio";

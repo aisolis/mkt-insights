@@ -1,8 +1,9 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 import { createServiceClient } from "@/lib/supabase/server";
-import { leerControl, MAX_BYTES_CONTROL, tablaCsv, type ControlBi, type LecturaControl } from "./control-bi";
+import { leerControl, MAX_BYTES_CONTROL, MAX_FILAS_CONTROL, tablaCsv, type ControlBi, type LecturaControl } from "./control-bi";
 import { MIME_XLSX } from "./tipos";
 
 const BUCKET_CONTROLES = "controles-bi";
@@ -15,14 +16,33 @@ export async function controlesDe(cargaIds: string[]): Promise<Map<string, Contr
   return new Map((data as ControlBi[]).map((c) => [c.carga_id, c]));
 }
 
+/** Un control son unos KB; un .xlsx que se descomprime en más de esto (o con muchas partes) no es un reporte de BI. */
+const MAX_XLSX_DESCOMPRIMIDO = 20 * 1024 * 1024;
+const MAX_PARTES_XLSX = 200;
+const MAX_FILA_CONTROL = MAX_FILAS_CONTROL + 50;
+
+/** Antes de abrir el libro: tamaño descomprimido y número de partes, para no inflar un zip malicioso en memoria. */
+async function xlsxRazonable(bytes: Buffer): Promise<boolean> {
+  const zip = await JSZip.loadAsync(bytes);
+  const partes = Object.values(zip.files).filter((f) => !f.dir);
+  const total = partes.reduce((s, f) => s + ((f as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize ?? Infinity), 0);
+  return partes.length <= MAX_PARTES_XLSX && total <= MAX_XLSX_DESCOMPRIMIDO;
+}
+
 /** La primera hoja del libro con encabezados de control reconocibles. */
 async function leerXlsx(bytes: Buffer): Promise<LecturaControl> {
+  if (!(await xlsxRazonable(bytes))) return { error: "El Excel es demasiado grande para un control de BI: entrégalo por mes y canal, no por línea." };
   const libro = new ExcelJS.Workbook();
   await libro.xlsx.load(bytes as unknown as ArrayBuffer);
   let primera: LecturaControl | null = null;
-  for (const hoja of libro.worksheets) {
+  for (const hoja of libro.worksheets.slice(0, 20)) {
     const tabla: unknown[][] = [];
-    hoja.eachRow({ includeEmpty: true }, (fila, n) => { tabla[n - 1] = (fila.values as unknown[]).slice(1); });
+    let larga = false;
+    hoja.eachRow((fila, n) => {
+      if (n > MAX_FILA_CONTROL) { larga = true; return; }
+      tabla[n - 1] = (fila.values as unknown[]).slice(1, 50);
+    });
+    if (larga) return { error: `El control pasa de ${MAX_FILAS_CONTROL.toLocaleString("es-HN")} filas: entrégalo por mes y canal, no por línea.` };
     const l = leerControl(tabla.map((f) => f ?? []));
     if (!("error" in l)) return l;
     primera ??= l;
@@ -43,7 +63,7 @@ export async function subirControl(cargaId: string, archivo: File, datos: DatosC
   const bytes = Buffer.from(await archivo.arrayBuffer());
   let lectura: LecturaControl;
   try {
-    lectura = ext === "xlsx" ? await leerXlsx(bytes) : leerControl(tablaCsv(bytes.toString("utf8")));
+    lectura = ext === "xlsx" ? await leerXlsx(bytes) : leerControl(tablaCsv(bytes.toString("utf8")).slice(0, MAX_FILA_CONTROL));
   } catch {
     return { error: "No se pudo leer el archivo. ¿Es un Excel o CSV válido?" };
   }

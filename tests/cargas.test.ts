@@ -97,6 +97,22 @@ describe.skipIf(!url || !service)("carga mensual contra el Supabase local", () =
     }
   });
 
+  it("una celda inválida manda solo su fila a cuarentena; muchas tumban la carga (S29)", { timeout: 60_000 }, async () => {
+    const pocas = dias(2026, 10, 28).map((fecha, i) => ({ fecha, canal, ventaNeta: 100, kg: i === 3 ? "N/D" : 1 }));
+    const id = await subir("con-cuarentena.xlsx", await xlsxDePrueba(pocas));
+    const r = await procesarCarga(svc, id);
+    expect(r).toMatchObject({ estado: "validada", conteo: { cargadas: 27, cuarentena: [{ hoja: "Hoja1", fila: 5, campo: "kg", valor: "N/D", motivo: "Kilos: valor numérico inválido" }] } });
+    const fila = (await svc.schema("ventas").from("carga").select("filas_cuarentena").eq("id", id).single()).data;
+    expect(fila?.filas_cuarentena).toBe(1);
+    expect((await svc.schema("ventas").from("fila_cuarentena").select("valor").eq("carga_id", id)).data).toEqual([{ valor: "N/D" }]);
+    expect((await svc.schema("ventas").from("carga_mes").select("filas, venta_neta").eq("carga_id", id).single()).data).toMatchObject({ filas: 27, venta_neta: 2700 });
+
+    const muchas = dias(2026, 10, 28).map((fecha) => ({ fecha, canal, ventaNeta: 100, kg: "sin dato" }));
+    const otra = await subir("todas-malas.xlsx", await xlsxDePrueba([...muchas, ...muchas]));
+    expect(await procesarCarga(svc, otra)).toMatchObject({ estado: "con_errores", error: expect.stringMatching(/^56 filas tienen celdas que no se entienden \(más del 1 %\)/) });
+    expect((await svc.schema("ventas").from("fila_cuarentena").select("fila").eq("carga_id", otra)).data).toEqual([]);
+  });
+
   it("rechaza un Excel con columnas distintas y deja la carga con su error", async () => {
     const id = await subir("columnas-malas.xlsx", await xlsxDePrueba([{ fecha: new Date(Date.UTC(2026, 9, 1)), canal, ventaNeta: 1 }], ["Fecha", "Ruta", "Otra"]));
     const r = await procesarCarga(svc, id);

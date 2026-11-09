@@ -5,7 +5,7 @@
 import ExcelJS from "exceljs";
 import { ENCABEZADOS_CUBO } from "@/lib/cargas/columnas";
 
-export type FilaPrueba = { fecha: Date; canal: string; ventaNeta: number; kg?: number; duplicar?: boolean };
+export type FilaPrueba = { fecha: Date; canal: string; ventaNeta: number; kg?: number | string; duplicar?: boolean };
 
 /** Opciones de formato: encabezados con otro nombre (`renombrar`, por nombre del cubo) y filas de título antes de los
  * encabezados (`titulo`). */

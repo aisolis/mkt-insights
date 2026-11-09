@@ -57,7 +57,7 @@ export async function enviarResumenPublicado(version: number, origen: string): P
 
 export async function listarCargas(): Promise<FilaCarga[]> {
   const { data, error } = await createServiceClient().schema("ventas").from("carga")
-    .select("id, nombre_archivo, estado, error, bytes, periodo_desde, periodo_hasta, filas_cargadas, filas_duplicadas, filas_discrepancia, creado_en, subido_por")
+    .select("id, nombre_archivo, estado, error, bytes, periodo_desde, periodo_hasta, filas_cargadas, filas_duplicadas, filas_discrepancia, filas_cuarentena, creado_en, subido_por")
     .order("creado_en", { ascending: false }).limit(30);
   if (error) throw new Error(`cargas: ${error.message}`);
   return data as FilaCarga[];
@@ -73,17 +73,40 @@ export async function alertasDe(cargaIds: string[]): Promise<Map<string, Alerta[
   const svc = createServiceClient();
   const [{ porCarga, vigente }, hojas, canales, controles] = await Promise.all([
     mesesParaAlertas(svc, cargaIds),
-    svc.schema("ventas").from("carga").select("id, hojas_ignoradas, columnas").in("id", cargaIds),
+    svc.schema("ventas").from("carga").select("id, hojas_ignoradas, columnas, filas_cuarentena").in("id", cargaIds),
     canalesParaAlertas(svc, cargaIds),
     controlesDe(cargaIds),
   ]);
   const ignoradas = new Map((hojas.data ?? []).map((c) => [c.id as string, (c.hojas_ignoradas ?? []) as string[]]));
   const vacios = new Map((hojas.data ?? []).map((c) => [c.id as string, camposVacios(c.columnas as ColumnasHoja[] | null)]));
-  // El control de BI (V1-06) va como una alerta más: sin control o sin coincidir, aprobar pide el motivo.
+  const enCuarentena = new Map((hojas.data ?? []).map((c) => [c.id as string, Number(c.filas_cuarentena ?? 0)]));
+  const ejemplos = await cuarentenaDe([...enCuarentena].filter(([, n]) => n > 0).map(([id]) => id), 3);
+  // El control de BI (V1-06) y la cuarentena (S29) van como alertas más: aprobar pide el motivo.
   return new Map(cargaIds.map((id) => [id, [
     ...alertasCarga(porCarga.get(id) ?? [], vigente, hoyHN(), ignoradas.get(id), canales.get(id), vacios.get(id)),
+    ...alertaCuarentena(enCuarentena.get(id) ?? 0, ejemplos.get(id) ?? []),
     alertaControl(controles.get(id)),
   ]]));
+}
+
+export type FilaCuarentena = { hoja: string; fila: number; campo: string; valor: string; motivo: string };
+
+/** Filas en cuarentena de cada carga (las primeras `limite`, por hoja y fila). */
+export async function cuarentenaDe(cargaIds: string[], limite = 100): Promise<Map<string, FilaCuarentena[]>> {
+  const r = new Map<string, FilaCuarentena[]>();
+  for (const id of cargaIds) {
+    const { data, error } = await createServiceClient().schema("ventas").from("fila_cuarentena").select("hoja, fila, campo, valor, motivo")
+      .eq("carga_id", id).order("hoja").order("fila").limit(limite);
+    if (error) throw new Error(`cuarentena: ${error.message}`);
+    r.set(id, data as FilaCuarentena[]);
+  }
+  return r;
+}
+
+function alertaCuarentena(n: number, ejemplos: FilaCuarentena[]): Alerta[] {
+  if (!n) return [];
+  const ej = ejemplos.map((x) => `hoja «${x.hoja}», fila ${x.fila} (${x.motivo.toLowerCase()} «${x.valor}»)`).join("; ");
+  return [{ nivel: "revisar", texto: `${n.toLocaleString("es-HN")} ${n === 1 ? "fila quedó" : "filas quedaron"} en cuarentena por celdas que no se entienden y no ${n === 1 ? "se cargó" : "se cargaron"}: ${ej}${n > ejemplos.length ? "…" : ""}. Sus ventas no están en los totales: corrige la exportación o acepta la diferencia con un motivo.` }];
 }
 
 export const MetaCarga = z.object({
