@@ -16,6 +16,15 @@ export const TIPO_EVENTO: Record<TipoEvento, string> = {
   documento: "Abrió un documento",
 };
 
+/** La frase tras el nombre en la lista de actividad («Ana entró con 2FA»): sin pasar siglas a minúsculas. */
+export const FRASE_EVENTO: Record<TipoEvento, string> = {
+  ingreso: "entró con 2FA",
+  codigo_fallido: "puso un código 2FA incorrecto",
+  salida: "salió",
+  exportacion: "exportó",
+  documento: "abrió un documento",
+};
+
 export async function registrarEvento(usuarioId: string | null, tipo: TipoEvento, detalle: Record<string, unknown> = {}) {
   try {
     const { error } = await createServiceClient().schema("ventas").from("evento").insert({ usuario_id: usuarioId, tipo, detalle });

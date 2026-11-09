@@ -49,7 +49,13 @@ export async function accionUsuario(_: EstadoAccion, form: FormData): Promise<Es
   }
   if (r.error) return r;
   revalidatePath("/perfiles");
-  return { ok: d.accion === "reenviar" ? "Invitación reenviada." : "Guardado." };
+  // Qué cambió, dicho en el lugar del botón (el botón ya muestra el cambio contrario).
+  const ok = d.accion === "reenviar" ? "Invitación reenviada."
+    : d.accion === "nivel" ? `Ahora es ${d.valor === "plus" ? "Plus" : "Estándar"}.`
+    : d.accion === "admin" ? (d.valor === "si" ? "Ahora es admin." : "Ya no es admin.")
+    : d.accion === "aprobador" ? (d.valor === "si" ? "Ahora puede publicar versiones." : "Ya no publica versiones.")
+    : d.valor === "si" ? "Acceso reactivado." : "Acceso desactivado: ya no puede entrar.";
+  return { ok };
 }
 
 /** Ámbito de datos de una persona (V1-02): empresas, canales y rutas marcados; sin marcar nada = toda la venta. */
