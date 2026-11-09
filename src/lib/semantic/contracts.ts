@@ -62,8 +62,22 @@ export const VersionVigente = z.object({
     producto: z.array(z.object({ codigo: z.string(), descripcion: z.string() })),
     rutas_total: z.number(),
   }),
+  /** Ámbito de quien consulta (V1-02): las cifras ya vienen recortadas por la base. null = toda la venta. */
+  alcance: z.object({ empresa: z.array(z.string()).optional(), canal: z.array(z.string()).optional(), ruta: z.array(z.string()).optional() })
+    .nullable().optional(),
 });
 export type VersionVigente = z.infer<typeof VersionVigente>;
+
+/** «canal Detalle · 3 rutas» para avisar en pantalla y al asistente que las cifras son de un ámbito. */
+export function textoAlcance(a: VersionVigente["alcance"]): string | null {
+  if (!a) return null;
+  const partes = [
+    a.empresa?.length && `empresa ${a.empresa.join(", ")}`,
+    a.canal?.length && `${a.canal.length === 1 ? "canal" : "canales"} ${a.canal.join(", ")}`,
+    a.ruta?.length && (a.ruta.length > 3 ? `${a.ruta.length} rutas` : `${a.ruta.length === 1 ? "ruta" : "rutas"} ${a.ruta.join(", ")}`),
+  ].filter(Boolean);
+  return partes.length ? partes.join(" · ") : null;
+}
 
 /** Variación relativa; null si la base es cero (no hay % contra nada). */
 export function variacionPct(actual: number, base: number): number | null {

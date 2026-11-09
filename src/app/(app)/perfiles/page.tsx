@@ -1,11 +1,11 @@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { describirEvento, eventosRecientes, TIPO_EVENTO, type TipoEvento } from "@/lib/auditoria";
-import { listarUsuarios, type FilaUsuario } from "@/lib/auth/admin";
+import { describirAlcance, listarUsuarios, opcionesAlcance, type FilaUsuario } from "@/lib/auth/admin";
 import { requerirAdmin } from "@/lib/auth/acceso";
 import { NIVEL_TXT } from "@/lib/auth/reglas";
 import { fechaHoraLocal, fechaLocal } from "@/lib/format";
-import { AccionUsuario, FormInvitar } from "./formularios";
+import { AccionUsuario, FormAlcance, FormInvitar } from "./formularios";
 
 const ESTADO: Record<FilaUsuario["estado"], { txt: string; variante: "default" | "secondary" | "outline" | "destructive" }> = {
   activo: { txt: "Activo", variante: "default" },
@@ -18,7 +18,7 @@ export default async function Perfiles(props: PageProps<"/perfiles">) {
   const admin = await requerirAdmin();
   const sp = await props.searchParams;
   const tipo = typeof sp.evento === "string" && sp.evento in TIPO_EVENTO ? (sp.evento as TipoEvento) : undefined;
-  const [usuarios, eventos] = await Promise.all([listarUsuarios(), eventosRecientes(200, tipo)]);
+  const [usuarios, eventos, opciones] = await Promise.all([listarUsuarios(), eventosRecientes(200, tipo), opcionesAlcance()]);
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -54,7 +54,10 @@ export default async function Perfiles(props: PageProps<"/perfiles">) {
                     <div className="font-medium">{u.nombre}{yo && <span className="font-normal text-neutral-500"> (tú)</span>}</div>
                     <div className="text-xs text-neutral-500">{u.email}</div>
                   </TableCell>
-                  <TableCell>{NIVEL_TXT[u.nivel]}{u.esAdmin && " · admin"}{u.esAprobador && " · publica versiones"}</TableCell>
+                  <TableCell className="align-top">
+                    {NIVEL_TXT[u.nivel]}{u.esAdmin && " · admin"}{u.esAprobador && " · publica versiones"}
+                    <FormAlcance userId={u.id} alcance={u.alcance} opciones={opciones} resumen={describirAlcance(u.alcance)} />
+                  </TableCell>
                   <TableCell><Badge variant={ESTADO[u.estado].variante}>{ESTADO[u.estado].txt}</Badge></TableCell>
                   <TableCell className="text-neutral-600">{u.ultimoIngreso ? fechaLocal(u.ultimoIngreso) : "—"}</TableCell>
                   <TableCell>

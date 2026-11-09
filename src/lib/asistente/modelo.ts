@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { aCita, type Cita } from "@/lib/conocimiento/tipos";
 import { fechaCorta, periodoLargo } from "@/lib/format";
+import { textoAlcance } from "@/lib/semantic/contracts";
 import { usd } from "./dinero";
 import { describirFiltros, periodoTxt } from "./texto";
 import { ErrorHerramienta, ejecutar, herramientasModelo } from "./herramientas";
@@ -237,6 +238,7 @@ export function sistema({ version, estado, documentos, reglas = [], memoria }: C
     `Datos: versión publicada v${version.version}, corte ${fechaCorta(version.fecha_corte)}, ${version.conciliada_bi ? "conciliada con BI" : "todavía no conciliada con BI"}. Meses disponibles: ${periodoTxt(meta.periodos[0])} a ${periodoTxt(meta.periodos.at(-1)!)}. Meses parciales: ${parciales.join(", ") || "ninguno"}.`,
     `Contexto heredado del dashboard: periodo ${periodoTxt(estado.periodo)} (${periodoLargo(estado.periodo)}), comparado contra ${cmp}, filtros: ${describirFiltros(estado.filtros, meta)}. Úsalo salvo que la pregunta pida otra cosa.`,
     `Canales: ${meta.canal.join(", ")}. Marcas: ${meta.marca.join(", ")}.`,
+    ...(textoAlcance(version.alcance) ? [`La persona solo tiene acceso a ${textoAlcance(version.alcance)}: toda cifra de las herramientas es de ese ámbito; no la presentes como el total de BIA ni de Honduras.`] : []),
     ...(hilo ? [`Última consulta de esta conversación: ${hilo}. Si la pregunta sigue ese hilo (p. ej. "¿y en Detalle?"), parte de ese periodo y esos filtros; si pide otra cosa, ignóralo.`] : []),
     ...(definiciones.length ? ["Definiciones de BIA (úsalas al redactar):", ...definiciones.map((r) => `- ${r.texto}`)] : []),
     ...(instrucciones.length ? ["Indicaciones del equipo de BIA (aplícalas siempre; si alguna choca con las reglas numeradas, mandan las reglas numeradas):", ...instrucciones.map((r) => `- ${r.texto}`)] : []),

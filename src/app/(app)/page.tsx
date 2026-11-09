@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { advertenciasAcumulado, mesAnterior, pasosPuente, rangoAcumulado } from "@/lib/dashboard/analisis";
 import { advertencias, leerParams, periodoComparado, queryString } from "@/lib/dashboard/params";
 import { capital, conteo, fechaCorta, lempirasCompacto, periodoCorto, periodoLargo, precioKg, toneladas } from "@/lib/format";
-import { variacionPct, type Filtros as FiltrosT, type Kpi, type VersionVigente } from "@/lib/semantic/contracts";
+import { textoAlcance, variacionPct, type Filtros as FiltrosT, type Kpi, type VersionVigente } from "@/lib/semantic/contracts";
 import {
   acumuladoAnio, kpiPeriodo, puentePrecioVolumenMezcla, rutasAtipicas, serieMensual, topContribuyentes, variacionPorDimension, versionVigente,
 } from "@/lib/semantic/queries";
@@ -60,7 +60,12 @@ export default async function Inicio(props: PageProps<"/">) {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Desempeño comercial</h1>
-        <p className="text-sm text-neutral-500">{subtitulo(periodo, cmp, filtros, meta.producto)}</p>
+        <p className="text-sm text-neutral-500">{subtitulo(periodo, cmp, filtros, meta.producto, !!version.alcance?.canal?.length)}</p>
+        {textoAlcance(version.alcance) && (
+          <p role="note" className="max-w-prose text-sm text-amber-900">
+            Tu acceso cubre solo {textoAlcance(version.alcance)}: todas las cifras, totales y comparaciones de esta pantalla son de ese ámbito, no de toda BIA.
+          </p>
+        )}
       </div>
 
       <Filtros estado={estado} periodos={meta.periodos} opciones={meta} />
@@ -151,8 +156,8 @@ function vars(kpi: Kpi, otra: Kpi, campo: "venta_neta" | "kg" | "precio_kg" | "c
   return [{ pct: pct(kpi), contra }, { pct: pct(otra), contra: contraOtra }];
 }
 
-function subtitulo(periodo: { anio: number; mes: number }, cmp: { anio: number; mes: number }, f: FiltrosT, productos: VersionVigente["metadatos"]["producto"]) {
-  const partes = [`${capital(periodoLargo(periodo))} vs. ${periodoLargo(cmp)}`, "Honduras", f.canal ?? "todos los canales"];
+function subtitulo(periodo: { anio: number; mes: number }, cmp: { anio: number; mes: number }, f: FiltrosT, productos: VersionVigente["metadatos"]["producto"], conAlcance = false) {
+  const partes = [`${capital(periodoLargo(periodo))} vs. ${periodoLargo(cmp)}`, "Honduras", f.canal ?? (conAlcance ? "los canales de tu acceso" : "todos los canales")];
   if (f.ruta) partes.push(`ruta ${f.ruta}`);
   if (f.marca) partes.push(`marca ${f.marca}`);
   if (f.art_codigo) partes.push(productos.find((p) => p.codigo === f.art_codigo)?.descripcion ?? `producto ${f.art_codigo}`);

@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { cambiarPerfil, invitar, reenviarInvitacion, type Cambio } from "@/lib/auth/admin";
+import { cambiarPerfil, guardarAlcance, invitar, reenviarInvitacion, type Alcance, type Cambio } from "@/lib/auth/admin";
 import { requerirAdmin } from "@/lib/auth/acceso";
 
 export type EstadoAccion = { error?: string; ok?: string } | null;
@@ -51,3 +51,20 @@ export async function accionUsuario(_: EstadoAccion, form: FormData): Promise<Es
   revalidatePath("/perfiles");
   return { ok: d.accion === "reenviar" ? "Invitación reenviada." : "Guardado." };
 }
+
+/** Ámbito de datos de una persona (V1-02): empresas, canales y rutas marcados; sin marcar nada = toda la venta. */
+export async function guardarAlcanceAccion(_: EstadoAccion, form: FormData): Promise<EstadoAccion> {
+  await requerirAdmin();
+  const userId = z.uuid().safeParse(form.get("userId"));
+  if (!userId.success) return { error: "Persona no válida." };
+  const lista = (k: string) => [...new Set(form.getAll(k).map(String).filter(Boolean))].slice(0, 500);
+  const partes = { empresa: lista("empresa"), canal: lista("canal"), ruta: lista("ruta") };
+  const alcance: Alcance = form.get("todo") === "si" ? null
+    : Object.fromEntries(Object.entries(partes).filter(([, v]) => v.length));
+  const final = alcance && Object.keys(alcance).length ? alcance : null;
+  const r = await guardarAlcance(userId.data, final);
+  if (r.error) return r;
+  revalidatePath("/perfiles");
+  return { ok: final ? "Ámbito guardado: vale desde su próxima consulta." : "Ahora ve toda la venta interna." };
+}
+
