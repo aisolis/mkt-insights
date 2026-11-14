@@ -131,6 +131,7 @@
 - [x] Ámbito de datos por persona (empresa, canal, ruta) aplicado en la base con un rol lector sin BYPASSRLS y políticas en hechos y resumen; editor en Perfiles y accesos; aviso en dashboard y asistente (V1-02, S33) — `0026_alcance.sql`
 - [ ] Cargar la matriz nominal de ámbitos cuando BIA la entregue (Q06)
 - [x] /clientes se pasaba del límite de 8 s con la política de ámbito (el planificador ordenaba el millón de líneas en disco): la función agrupa en memoria y vuelve a ~4 s — `0027_clientes_rapido.sql`
+- [x] Dashboard: con la base en frío alguna de sus ~10 lecturas en paralelo pasaba los 8 s («acumulado_anio: statement timeout»); las funciones de lectura tienen 30 s propios — `0028_tiempo_lecturas.sql` (aplicada también en la nube)
 - [ ] Proyecto alojado: aplicar `0020_aprobacion.sql`, `0021_control_bi.sql` (crea el bucket `controles-bi`), `0022_cuarentena.sql`, `0023_procesamiento.sql`, `0024_eventos.sql`, `0025_documentos_vigencia.sql`, `0026_alcance.sql` (crea el rol `lector_ventas`) y `0027_clientes_rapido.sql`
 - [ ] Cola con trabajador aparte (y subida reanudable) si BIA necesita cargar desde la app archivos de más de 50 MB o más de 300 s
 - [ ] Confirmar con BI (Q09) la regla de precisión y el formato de su reporte; probar con un reporte real

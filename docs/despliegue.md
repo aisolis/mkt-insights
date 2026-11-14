@@ -6,7 +6,7 @@ Entorno compartido para desarrollar y revisar. **Sin ventas reales**: la base ti
 
 | Pieza | Dónde | Notas |
 |---|---|---|
-| Base de datos, Auth y archivos | Supabase, región us-west-2 (Oregón), plan gratis | Migraciones 0001–0027 aplicadas y registradas en `supabase_migrations.schema_migrations` |
+| Base de datos, Auth y archivos | Supabase, región us-west-2 (Oregón), plan gratis | Migraciones 0001–0028 aplicadas y registradas en `supabase_migrations.schema_migrations` |
 | Web | Vercel, importada desde GitHub `biahndcompras/mkt-insights` | Corre en `pdx1` (Oregón, junto a la base). Cada push a `main` se publica; cada rama tiene su vista previa |
 | Claves | `.env.nube` en el equipo de quien administra (ignorado por git) | Nunca en el repositorio ni en el chat |
 
@@ -44,7 +44,7 @@ Sin `--admin` queda sin administración; `estandar` en vez de `plus` quita el de
 ## Una migración nueva
 
 1. Crear `supabase/migrations/00NN_nombre.sql` y probarla en local (`docker exec -i supabase_db_bia-foresight psql -U postgres -d postgres -v ON_ERROR_STOP=1 < archivo`).
-2. Aplicarla en la nube con la Supabase CLI (`npx supabase login`, `npx supabase link --project-ref <ref>`, `npx supabase db push`): la CLI ve las 27 primeras como ya aplicadas y sube solo las nuevas.
+2. Aplicarla en la nube con la Supabase CLI (`npx supabase login`, `npx supabase link --project-ref <ref>`, `npx supabase db push`): la CLI ve las ya aplicadas y sube solo las nuevas.
 3. Hacer push: Vercel publica la web.
 
 ## Límites del plan gratis
