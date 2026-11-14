@@ -53,9 +53,17 @@ export type MapeoCarga = { columnas: ColumnaCarga[]; filaEncabezado: number; hoj
 export const normalizarEncabezado = (t: string) =>
   t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
+/**
+ * Hoja que se salta: mismo nombre (sin importar mayúsculas, tildes ni signos) o, si el nombre configurado termina en «*»,
+ * cualquier hoja que empiece así. Sirve para los resúmenes cuyo nombre cambia cada mes («1. Venta-Kilos x Canal Sep 026»).
+ */
 export const hojaExcluida = (hoja: string, m: MapeoCarga) => {
   const n = normalizarEncabezado(hoja);
-  return m.hojasExcluidas.some((h) => normalizarEncabezado(h) === n);
+  return m.hojasExcluidas.some((h) => {
+    const prefijo = h.trim().endsWith("*");
+    const k = normalizarEncabezado(prefijo ? h.trim().slice(0, -1) : h);
+    return prefijo ? k !== "" && n.startsWith(k) : k === n;
+  });
 };
 
 /** Cómo se leyeron los encabezados de una hoja. `indices`: columna (base 0) de cada campo encontrado. */

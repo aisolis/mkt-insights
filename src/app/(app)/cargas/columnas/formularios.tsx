@@ -114,7 +114,7 @@ export function FormFormato({ fila, hojas }: { fila: number; hojas: string[] }) 
         <div className="min-w-0 space-y-1 text-sm">
           <label htmlFor="formato-hojas" className="block text-neutral-700">Hojas que se saltan, una por línea</label>
           <Textarea id="formato-hojas" name="hojas" defaultValue={hojas.join("\n")} rows={3} className="min-h-20 font-mono text-sm md:text-sm" />
-          <p className="max-w-prose text-xs text-neutral-500">Hojas de apoyo que no son ventas. Las demás hojas sin las columnas también se saltan, pero la carga lo avisa.</p>
+          <p className="max-w-prose text-xs text-neutral-500">Hojas de apoyo que no son ventas. Termina el nombre en «*» para saltar todas las que empiezan así (p. ej. «1. Venta-Kilos x Canal*», cuyo mes cambia). Las demás hojas sin las columnas también se saltan, pero la carga lo avisa.</p>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">

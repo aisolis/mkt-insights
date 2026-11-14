@@ -102,6 +102,11 @@ describe("columnas del Excel", () => {
     expect(l.sinUsar).toEqual(["Año", "Mes Nom"]);
     expect(hojaExcluida("DESGLOCE", mapeo())).toBe(true);
     expect(hojaExcluida("Hoja1", mapeo())).toBe(false);
+    // Un nombre terminado en «*» salta las hojas que empiezan así: los resúmenes cambian de mes en el nombre.
+    const m = mapeo();
+    m.hojasExcluidas = ["Desgloce", "1. Venta-Kilos x Canal*", "3.Ene025*", "*"];
+    expect(["1. Venta-Kilos x Canal Sep 026", "1. VENTA KILOS X CANAL OCT 026", "3.Ene025-Oct026"].map((h) => hojaExcluida(h, m))).toEqual([true, true, true]);
+    expect(["2.Cierre Oct 026", "Hoja1"].map((h) => hojaExcluida(h, m))).toEqual([false, false]); // «*» solo no salta todo
   });
 
   it("columnas opcionales que no vinieron, en palabras para la alerta", () => {
