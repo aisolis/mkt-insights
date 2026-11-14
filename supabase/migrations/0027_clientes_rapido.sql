@@ -24,3 +24,10 @@ language sql stable parallel safe set search_path = '' as $$
   select case when a ? p_dim then array(select jsonb_array_elements_text(a -> p_dim)) end
   from (select interno.alcance_sesion() a) x
 $$;
+
+-- Aun así cada consulta de clientes tarda 4–7 s, y la página lanza dos a la vez (resumen y lista), cerca del corte de
+-- 8 s de authenticated: bajo carga a veces se cortaba. PostgREST (v12+) aplica el statement_timeout que declara la
+-- función que se llama; estas dos tienen 30 s. El resto de las funciones sigue con los 8 s del rol.
+alter function ventas.clientes_resumen(int, int, int, int, int, jsonb) set statement_timeout = '30s';
+alter function ventas.clientes_lista(int, int, int, int, int, jsonb, text, int, int) set statement_timeout = '30s';
+notify pgrst, 'reload schema';

@@ -215,7 +215,7 @@ function Pie({ version, avisos }: { version: VersionVigente; avisos: string[] })
       <p className="tabular-nums">Fuente: cubo de ventas BIA · {version.archivo} · versión v{version.version} publicada {fechaCorta(version.publicado_en)}</p>
       <p>Detalle por cliente solo para perfiles Plus. Estos datos no se envían al asistente de IA.</p>
       {!version.conciliada_bi && <p className="text-amber-700">Cifras verificadas contra el Excel exportado, todavía no conciliadas con el reporte de BI.</p>}
-      {avisos.map((a) => <p key={a} className="text-amber-700">{a}</p>)}
+      {avisos.map((a, i) => <p key={`${i}-${a}`} className="text-amber-700">{a}</p>)}
     </footer>
   );
 }

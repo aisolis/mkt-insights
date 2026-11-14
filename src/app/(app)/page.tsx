@@ -191,7 +191,7 @@ function Pie({ version, kpi, avisos }: { version: VersionVigente; kpi: Kpi; avis
         Fuente: cubo de ventas BIA · {version.archivo} · versión v{version.version} publicada {fechaCorta(version.publicado_en)} · cobertura {kpi.rutas_con_venta}/{kpi.rutas_total} rutas con venta en el periodo
       </p>
       {!version.conciliada_bi && <p className="text-amber-700">Cifras verificadas contra el Excel exportado, todavía no conciliadas con el reporte de BI.</p>}
-      {avisos.map((a) => <p key={a} className="text-amber-700">{a}</p>)}
+      {avisos.map((a, i) => <p key={`${i}-${a}`} className="text-amber-700">{a}</p>)}
     </footer>
   );
 }

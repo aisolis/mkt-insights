@@ -438,7 +438,7 @@ export function RespuestaVista({ r }: { r: Respuesta }) {
 
       {advertencias.length > 0 && (
         <ul className="space-y-1 text-xs text-amber-800">
-          {advertencias.map((a) => <li key={a} className="flex gap-1.5"><IconoAlerta className="mt-px size-3.5 shrink-0" />{a}</li>)}
+          {advertencias.map((a, i) => <li key={`${i}-${a}`} className="flex gap-1.5"><IconoAlerta className="mt-px size-3.5 shrink-0" />{a}</li>)}
         </ul>
       )}
 
@@ -535,7 +535,8 @@ function Lista({ titulo, items, punto, vacio }: { titulo: string; items: string[
         <span className={`size-1.5 rounded-full ${punto}`} />{titulo}
       </div>
       {items.length ? (
-        <ul className="space-y-1.5 text-[13px] leading-relaxed text-neutral-700 tabular-nums">{items.map((h) => <li key={h}>{h}</li>)}</ul>
+        // Dos consultas iguales dan el mismo hecho dos veces: se muestra una vez.
+        <ul className="space-y-1.5 text-[13px] leading-relaxed text-neutral-700 tabular-nums">{[...new Set(items)].map((h) => <li key={h}>{h}</li>)}</ul>
       ) : <p className="text-[13px] text-neutral-400">{vacio}</p>}
     </div>
   );

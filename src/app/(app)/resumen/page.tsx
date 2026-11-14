@@ -74,7 +74,7 @@ export default async function Resumen(props: PageProps<"/resumen">) {
       {r.avisos.length > 0 && (
         <section className="resumen-bloque space-y-1 border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
           <h2 className="font-semibold">Ten en cuenta</h2>
-          <ul className="list-disc space-y-0.5 pl-5">{r.avisos.map((a) => <li key={a}>{a}</li>)}</ul>
+          <ul className="list-disc space-y-0.5 pl-5">{r.avisos.map((a, i) => <li key={`${i}-${a}`}>{a}</li>)}</ul>
         </section>
       )}
 

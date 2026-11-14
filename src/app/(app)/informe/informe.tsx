@@ -166,7 +166,7 @@ function Evidencia({ r }: { r: Respuesta }) {
       </dl>
       {/* En las respondidas, las advertencias ya van junto a la respuesta. */}
       {r.estado === "fuera_de_alcance" && e.advertencias.length > 0 && (
-        <ul className="mt-1.5 list-disc pl-4 text-amber-800">{e.advertencias.map((a) => <li key={a}>{a}</li>)}</ul>
+        <ul className="mt-1.5 list-disc pl-4 text-amber-800">{e.advertencias.map((a, i) => <li key={`${i}-${a}`}>{a}</li>)}</ul>
       )}
     </div>
   );
