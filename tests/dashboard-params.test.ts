@@ -3,6 +3,7 @@ import { advertencias, leerParams, periodoComparado, queryString } from "@/lib/d
 import type { PeriodoMeta } from "@/lib/semantic/contracts";
 
 const periodos: PeriodoMeta[] = [
+  { anio: 2025, mes: 6, dias: 26, ultimo_dia: "2025-06-30", cerrado: true },
   { anio: 2025, mes: 9, dias: 26, ultimo_dia: "2025-09-30", cerrado: true },
   { anio: 2026, mes: 1, dias: 26, ultimo_dia: "2026-01-31", cerrado: true },
   { anio: 2026, mes: 8, dias: 26, ultimo_dia: "2026-08-31", cerrado: true },
@@ -55,6 +56,9 @@ describe("advertencias", () => {
   it("avisa cuando el periodo comparado no tiene datos", () => {
     const a = advertencias({ anio: 2026, mes: 1 }, { anio: 2025, mes: 12 }, periodos);
     expect(a).toContain("Diciembre 2025 no tiene datos en esta versión: la comparación es contra cero.");
+    // Un mes sin datos no se llama además «sin certificar»: ya tiene su aviso.
+    const d = advertencias({ anio: 2025, mes: 6 }, { anio: 2025, mes: 5 }, periodos);
+    expect(d.filter((t) => t.includes("sin certificar"))).toEqual([expect.stringMatching(/^Junio 2025 sin certificar/)]);
   });
 });
 

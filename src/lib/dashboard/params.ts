@@ -62,7 +62,10 @@ export function advertencias(periodo: Periodo, comparado: Periodo, periodos: Per
     if (!meta) out.push(`${capital(periodoLargo(p))} no tiene datos en esta versión: la comparación es contra cero.`);
     else if (!meta.cerrado) out.push(`${capital(periodoLargo(p))} parcial: ${meta.dias} días con venta, corte ${fechaCorta(meta.ultimo_dia)}.`);
   }
-  const sinCertificar = [periodo, comparado].filter((p) => clave(p) <= clave(S1_SIN_CERTIFICAR_HASTA)).map((p) => capital(periodoLargo(p)));
+  // Solo los meses que la versión tiene: uno sin datos ya tiene su propio aviso.
+  const sinCertificar = [periodo, comparado]
+    .filter((p) => clave(p) <= clave(S1_SIN_CERTIFICAR_HASTA) && periodos.some((m) => m.anio === p.anio && m.mes === p.mes))
+    .map((p, i) => (i === 0 ? capital(periodoLargo(p)) : periodoLargo(p)));
   if (sinCertificar.length)
     out.push(`${sinCertificar.join(" y ")} sin certificar, con diferencias menores contra el resumen trimestral que envió BIA: ene–jun 2025 suma L 415 mil más ahí (0.05 %) (S1).`);
   return [...new Set(out)];

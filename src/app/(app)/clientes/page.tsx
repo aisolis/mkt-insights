@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { requerirPlus } from "@/lib/auth/acceso";
 import { advertencias, leerParams, periodoComparado, queryString, type EstadoDashboard } from "@/lib/dashboard/params";
-import { capital, conteo, fechaCorta, lempirasCompacto, periodoCorto, periodoLargo } from "@/lib/format";
+import { capital, conteo, fechaCorta, fechaLocal, lempirasCompacto, periodoCorto, periodoLargo } from "@/lib/format";
 import {
   consultasClientesSesion, ESTADOS_CLIENTE, leerEstadoCliente,
   type EstadoCliente, type ListaClientes, type ResumenClientes,
@@ -212,7 +212,7 @@ function Seccion({ titulo, detalle, accion, children }: { titulo: string; detall
 function Pie({ version, avisos }: { version: VersionVigente; avisos: string[] }) {
   return (
     <footer className="space-y-1 text-xs text-neutral-500">
-      <p className="tabular-nums">Fuente: cubo de ventas BIA · {version.archivo} · versión v{version.version} publicada {fechaCorta(version.publicado_en)}</p>
+      <p className="tabular-nums">Fuente: cubo de ventas BIA · {version.archivo} · versión v{version.version} publicada {fechaLocal(version.publicado_en)}</p>
       <p>Detalle por cliente solo para perfiles Plus. Estos datos no se envían al asistente de IA.</p>
       {!version.conciliada_bi && <p className="text-amber-700">Cifras verificadas contra el Excel exportado, todavía no conciliadas con el reporte de BI.</p>}
       {avisos.map((a, i) => <p key={`${i}-${a}`} className="text-amber-700">{a}</p>)}

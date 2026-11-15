@@ -101,7 +101,7 @@ export async function consultasClientesSesion() {
 export const ESTADOS_CLIENTE: Record<EstadoCliente, { titulo: string; explicacion: (periodo: string, comparado: string, umbralPct: string) => string }> = {
   activos: {
     titulo: "Activos",
-    explicacion: (p) => `Compraron en ${p} (venta neta del mes mayor que cero). Son los "clientes con compra" del dashboard: nuevos + recuperados + siguen comprando.`,
+    explicacion: (p) => `Compraron en ${p} (venta neta del mes mayor que cero). Son los "clientes con compra" del dashboard: nuevos + recuperados + siguen comprando. Su venta puede pasar un poco la venta neta del mes: no resta a los clientes que ese mes quedaron en negativo por devoluciones.`,
   },
   nuevos: {
     titulo: "Nuevos",
