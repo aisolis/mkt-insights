@@ -5,6 +5,8 @@ import {
   registrarTurno, tituloDe, tocarConversacion, type ConversacionResumen,
 } from "@/lib/asistente/conversaciones";
 import { acotarMemoria, memoriaDe } from "@/lib/asistente/memoria";
+import { terminosEnPregunta } from "@/lib/asistente/glosario";
+import { glosarioActivo } from "@/lib/asistente/glosario-servidor";
 import { reglasActivas } from "@/lib/asistente/reglas-servidor";
 import { columnasUso, modeloParaPregunta } from "@/lib/asistente/config-servidor";
 import { usoVacio } from "@/lib/asistente/modelo";
@@ -53,11 +55,16 @@ export async function POST(request: Request) {
 
   const contexto = entrada.data.contexto ?? conversacion.contexto;
   const { estado } = contextoEnPalabras(contexto, version);
-  const [{ historial, ultimaOk }, reglas] = await Promise.all([
+  const [{ historial, ultimaOk }, reglas, terminos] = await Promise.all([
     conversacionId ? historialReciente(conversacion.id) : { historial: [], ultimaOk: null },
     reglasActivas(), // si fallan, [] y el asistente responde con sus reglas fijas
+    glosarioActivo(), // si falla, [] y se responde sin glosario
   ]);
-  const ctx: Contexto = { fuente, version, estado, documentos: buscarDocumentos, memoria: acotarMemoria(memoriaDe(ultimaOk), version.metadatos), reglas };
+  // Del glosario solo van al modelo los términos de esta pregunta (y, con menos peso, los de la pregunta anterior,
+  // para «¿y eso cómo se calcula?»).
+  const anterior = historial.filter((t) => t.rol === "usuario").at(-1)?.texto;
+  const glosario = terminosEnPregunta(anterior ? [pregunta, anterior] : [pregunta], terminos);
+  const ctx: Contexto = { fuente, version, estado, documentos: buscarDocumentos, memoria: acotarMemoria(memoriaDe(ultimaOk), version.metadatos), reglas, glosario };
 
   // El elegido en Configuración del asistente (o automático). Con el tope de gasto del mes alcanzado o un modelo
   // fuera de la lista de permitidos responde el análisis automático, con aviso y marcado en la bitácora (G9).
@@ -67,6 +74,7 @@ export async function POST(request: Request) {
   const base = {
     usuario_id: usuario.id, conversacion_id: conversacion.id, version: version.version, contexto, pregunta,
     modelo: modelo?.modelo ?? null, reglas: reglas.map((r) => r.id), motivo_automatico: motivo,
+    glosario: modelo ? glosario.map((t) => t.id) : null, // solo el modelo recibe el glosario
   };
   // Si la base falla al cerrar, la respuesta ya quedó registrada: no se convierte en error ni en un segundo turno.
   const cierre = async () => {

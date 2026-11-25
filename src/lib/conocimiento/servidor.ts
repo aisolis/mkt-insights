@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { aVector, configEmbeddings, embeber } from "./embeddings";
 import { procesarDocumento } from "./procesar";
-import { BUCKET, DocumentoVisible, Encontrado, MAX_BYTES, type Audiencia, type Buscador } from "./tipos";
+import { BUCKET, DocumentoVisible, Encontrado, FORMATOS_ACEPTADOS, MAX_BYTES, TIPOS, tipoDeArchivo, type Audiencia, type Buscador, type TipoDocumento } from "./tipos";
 
 /** Lectura con la sesión de la persona: la base filtra por audiencia y exige 2FA. */
 export async function documentosVisibles(): Promise<DocumentoVisible[]> {
@@ -57,30 +57,32 @@ export const MetaDocumento = z.object({
   derechos: z.string().trim().min(3, "Indica de quién son los derechos y qué uso permiten.").max(300),
   vigente_hasta: z.iso.date().nullable(),
   sustituye_a: z.uuid().nullable(),
-  nombre_archivo: z.string().trim().min(1).max(200).regex(/\.pdf$/i, "Solo se aceptan PDF."),
+  nombre_archivo: z.string().trim().min(1).max(200).refine((n) => tipoDeArchivo(n) !== null, `Solo se aceptan archivos ${FORMATOS_ACEPTADOS}.`),
   bytes: z.number().int().positive().max(MAX_BYTES, "El archivo pasa de 20 MB."),
 });
 export type MetaDocumento = z.infer<typeof MetaDocumento>;
 
-export type Subida = { id: string; ruta: string; token: string } | { error: string };
+/** `mime`: el tipo de contenido con el que el navegador debe subir el archivo (el bucket solo acepta los de TIPOS). */
+export type Subida = { id: string; ruta: string; token: string; mime: string } | { error: string };
 
-/** Registra el documento y da una URL firmada para que el navegador suba el PDF directo a Storage (el cuerpo
+/** Registra el documento y da una URL firmada para que el navegador suba el archivo directo a Storage (el cuerpo
  * de una función de Vercel no admite archivos grandes). */
 export async function prepararSubida(meta: MetaDocumento, subidoPor: string): Promise<Subida> {
   const svc = createServiceClient();
   const id = crypto.randomUUID();
-  const ruta = `documentos/${id}.pdf`;
+  const tipo = tipoDeArchivo(meta.nombre_archivo) ?? "pdf"; // MetaDocumento ya comprobó la extensión
+  const ruta = `documentos/${id}.${tipo}`;
   let version = 1;
   if (meta.sustituye_a) {
     const ant = await svc.schema("conocimiento").from("documento").select("estado, version").eq("id", meta.sustituye_a).maybeSingle();
     if (!ant.data || ant.data.estado !== "listo") return { error: "El documento que se sustituye ya no está vigente." };
     version = ant.data.version + 1;
   }
-  const ins = await svc.schema("conocimiento").from("documento").insert({ id, ...meta, version, ruta_archivo: ruta, subido_por: subidoPor });
+  const ins = await svc.schema("conocimiento").from("documento").insert({ id, ...meta, tipo, version, ruta_archivo: ruta, subido_por: subidoPor });
   if (ins.error) return { error: `No se pudo registrar el documento (${ins.error.message}).` };
   const url = await svc.storage.from(BUCKET).createSignedUploadUrl(ruta);
   if (url.error) return { error: `No se pudo preparar la subida (${url.error.message}).` };
-  return { id, ruta, token: url.data.token };
+  return { id, ruta, token: url.data.token, mime: TIPOS[tipo].mime };
 }
 
 /** Procesa el PDF; si sustituye a otro documento, al quedar listo retira el anterior con el motivo (S32). */
@@ -101,12 +103,12 @@ export type FilaDocumentoAdmin = {
   id: string; titulo: string; fuente: string; fecha_documento: string | null; audiencia: Audiencia; estado: string; error: string | null;
   paginas: number | null; fragmentos: number; modelo_embedding: string | null; nombre_archivo: string; creado_en: string;
   propietario: string | null; derechos: string | null; vigente_hasta: string | null; version: number; sustituye_a: string | null;
-  motivo_retiro: string | null; fragmentos_sospechosos: number;
+  motivo_retiro: string | null; fragmentos_sospechosos: number; tipo: TipoDocumento;
 };
 
 export async function listarDocumentosAdmin(): Promise<FilaDocumentoAdmin[]> {
   const { data, error } = await createServiceClient().schema("conocimiento").from("documento")
-    .select("id, titulo, fuente, fecha_documento, audiencia, estado, error, paginas, fragmentos, modelo_embedding, nombre_archivo, creado_en, propietario, derechos, vigente_hasta, version, sustituye_a, motivo_retiro, fragmentos_sospechosos")
+    .select("id, titulo, fuente, fecha_documento, audiencia, estado, error, paginas, fragmentos, modelo_embedding, nombre_archivo, creado_en, propietario, derechos, vigente_hasta, version, sustituye_a, motivo_retiro, fragmentos_sospechosos, tipo")
     .order("creado_en", { ascending: false });
   if (error) throw new Error(`documentos: ${error.message}`);
   return data as FilaDocumentoAdmin[];

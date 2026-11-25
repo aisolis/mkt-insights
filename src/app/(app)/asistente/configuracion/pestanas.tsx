@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 const PESTANAS = [
   { href: "/asistente/configuracion", label: "Modelo de IA" },
   { href: "/asistente/configuracion/reglas", label: "Reglas" },
+  { href: "/asistente/configuracion/glosario", label: "Glosario" },
   { href: "/asistente/configuracion/bitacora", label: "Bitácora" },
 ];
 

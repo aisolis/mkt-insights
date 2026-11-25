@@ -151,7 +151,7 @@ export type UsoTurno = {
  * `reglas`: ids de las reglas del asistente activas al responder (G8), para auditar con qué reglas se respondió.
  * Devuelve el id del turno (para valorarlo o agregarlo al informe); si falla, null y no rompe la respuesta.
  */
-export async function registrarTurno(fila: FilaBitacora & UsoTurno & { conversacion_id: string; reglas: string[] }): Promise<number | null> {
+export async function registrarTurno(fila: FilaBitacora & UsoTurno & { conversacion_id: string; reglas: string[]; glosario?: string[] | null }): Promise<number | null> {
   try {
     const { data, error } = await createServiceClient().schema("ventas").from("consulta_asistente").insert(fila).select("id").single();
     if (error) console.error("bitácora del asistente:", error.message);

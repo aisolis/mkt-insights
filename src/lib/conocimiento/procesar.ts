@@ -1,29 +1,25 @@
 /**
- * Procesa un PDF ya subido al bucket: valida, extrae texto por página, fragmenta, (opcional) calcula embeddings
+ * Procesa un documento ya subido al bucket (PDF, Word, Excel o texto): valida, extrae texto por página, hoja o
+ * sección (extraer.ts), fragmenta, (opcional) calcula embeddings
  * y deja el documento "listo". Recibe un cliente service_role para que la usen el servidor, los scripts y las
  * pruebas por igual (sin server-only).
  */
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { extractText, getDocumentProxy } from "unpdf";
 import { aVector, embeber, type ConfigEmbeddings } from "./embeddings";
+import { ErrorDocumento, extraerPaginas, firmaInvalida } from "./extraer";
 import { fragmentar } from "./fragmentar";
-import { BUCKET, MAX_BYTES } from "./tipos";
+import { BUCKET, MAX_BYTES, TIPOS, TipoDocumento } from "./tipos";
 import { pareceInstruccion } from "./inyeccion";
 
-export { BUCKET, MAX_BYTES };
-
-export async function extraerPaginas(bytes: Uint8Array): Promise<string[]> {
-  const pdf = await getDocumentProxy(bytes);
-  const { text } = await extractText(pdf, { mergePages: false });
-  return text;
-}
+export { BUCKET, MAX_BYTES, extraerPaginas };
 
 export type ResultadoProceso = { estado: "listo"; fragmentos: number; conEmbeddings: boolean } | { estado: "error"; error: string };
 
 export async function procesarDocumento(svc: SupabaseClient, id: string, emb: ConfigEmbeddings | null): Promise<ResultadoProceso> {
-  const doc = await svc.schema("conocimiento").from("documento").select("id, ruta_archivo, estado").eq("id", id).single();
+  const doc = await svc.schema("conocimiento").from("documento").select("id, ruta_archivo, estado, tipo").eq("id", id).single();
   if (doc.error) return { estado: "error", error: "No existe el documento." };
+  const tipo = TipoDocumento.catch("pdf").parse(doc.data.tipo);
   if (!["subiendo", "error"].includes(doc.data.estado)) return { estado: "error", error: `El documento ya está ${doc.data.estado}.` };
 
   const fallar = async (error: string): Promise<ResultadoProceso> => {
@@ -35,7 +31,8 @@ export async function procesarDocumento(svc: SupabaseClient, id: string, emb: Co
   if (archivo.error) return fallar("No se encontró el archivo subido. Vuelve a subirlo.");
   const bytes = new Uint8Array(await archivo.data.arrayBuffer());
   if (bytes.length > MAX_BYTES) return fallar("El archivo pasa de 20 MB.");
-  if (new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-") return fallar("El archivo no es un PDF.");
+  const firma = firmaInvalida(bytes, tipo);
+  if (firma) return fallar(firma);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
 
   const otro = await svc.schema("conocimiento").from("documento").select("titulo").eq("sha256", sha256).in("estado", ["procesando", "listo"]).neq("id", id).maybeSingle();
@@ -46,12 +43,17 @@ export async function procesarDocumento(svc: SupabaseClient, id: string, emb: Co
 
   let paginas: string[];
   try {
-    paginas = await extraerPaginas(bytes.slice());
+    paginas = await extraerPaginas(bytes.slice(), tipo);
   } catch (e) {
-    return fallar(`No se pudo leer el PDF (${e instanceof Error ? e.message : e}).`);
+    if (e instanceof ErrorDocumento) return fallar(e.message);
+    return fallar(`No se pudo leer el ${tipo === "pdf" ? "PDF" : "archivo"} (${e instanceof Error ? e.message : e}).`);
   }
   const fragmentos = fragmentar(paginas);
-  if (!fragmentos.length) return fallar("El PDF no tiene texto seleccionable (¿es un escaneo?). Súbelo con texto o pásalo antes por OCR.");
+  if (!fragmentos.length) {
+    return fallar(tipo === "pdf"
+      ? "El PDF no tiene texto seleccionable (¿es un escaneo?). Súbelo con texto o pásalo antes por OCR."
+      : `El archivo de ${TIPOS[tipo].nombre} no tiene texto que se pueda usar.`);
+  }
 
   let vectores: number[][] | null = null;
   if (emb) {

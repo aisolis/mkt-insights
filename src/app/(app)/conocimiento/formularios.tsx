@@ -4,13 +4,13 @@ import { useActionState, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { BUCKET, MAX_BYTES } from "@/lib/conocimiento/tipos";
+import { BUCKET, FORMATOS_ACEPTADOS, MAX_BYTES, tipoDeArchivo } from "@/lib/conocimiento/tipos";
 import { createClient } from "@/lib/supabase/client";
 import { cambiarVigenciaDocumento, prepararDocumento, procesarDocumentoSubido } from "./acciones";
 
 type Paso = { tipo: "listo" | "error" | "trabajando"; texto: string } | null;
 
-/** Subida en tres pasos: registrar (servidor) → subir el PDF directo a Storage (navegador) → procesar (servidor). */
+/** Subida en tres pasos: registrar (servidor) → subir el archivo directo a Storage (navegador) → procesar (servidor). */
 export function FormSubir({ vigentes }: { vigentes: { id: string; titulo: string; version: number }[] }) {
   const router = useRouter();
   const form = useRef<HTMLFormElement>(null);
@@ -19,8 +19,8 @@ export function FormSubir({ vigentes }: { vigentes: { id: string; titulo: string
 
   async function enviar(datos: FormData) {
     const archivo = datos.get("archivo");
-    if (!(archivo instanceof File) || !archivo.size) return setPaso({ tipo: "error", texto: "Elige un PDF." });
-    if (archivo.type !== "application/pdf" && !/\.pdf$/i.test(archivo.name)) return setPaso({ tipo: "error", texto: "Solo se aceptan PDF." });
+    if (!(archivo instanceof File) || !archivo.size) return setPaso({ tipo: "error", texto: "Elige un archivo." });
+    if (!tipoDeArchivo(archivo.name)) return setPaso({ tipo: "error", texto: `Solo se aceptan archivos ${FORMATOS_ACEPTADOS}.` });
     if (archivo.size > MAX_BYTES) return setPaso({ tipo: "error", texto: "El archivo pasa de 20 MB." });
     const texto = (k: string) => String(datos.get(k) ?? "").trim() || null;
 
@@ -32,8 +32,9 @@ export function FormSubir({ vigentes }: { vigentes: { id: string; titulo: string
     });
     if ("error" in subida) return setPaso({ tipo: "error", texto: subida.error });
 
-    setPaso({ tipo: "trabajando", texto: "Subiendo el PDF…" });
-    const up = await createClient().storage.from(BUCKET).uploadToSignedUrl(subida.ruta, subida.token, archivo, { contentType: "application/pdf" });
+    setPaso({ tipo: "trabajando", texto: "Subiendo el archivo…" });
+    // El tipo de contenido lo fija el servidor según la extensión: el que informa el navegador varía (o viene vacío).
+    const up = await createClient().storage.from(BUCKET).uploadToSignedUrl(subida.ruta, subida.token, archivo, { contentType: subida.mime });
     if (up.error) return setPaso({ tipo: "error", texto: `No se pudo subir el archivo (${up.error.message}). Reintenta desde la tabla.` });
 
     setPaso({ tipo: "trabajando", texto: "Leyendo y preparando el texto…" });
@@ -69,8 +70,8 @@ export function FormSubir({ vigentes }: { vigentes: { id: string; titulo: string
         </Campo>
       )}
       <Campo etiqueta="Descripción (opcional)" ancho><Textarea name="descripcion" maxLength={1000} rows={2} /></Campo>
-      <Campo etiqueta="Archivo PDF (máx. 20 MB, con texto seleccionable)" ancho>
-        <input name="archivo" type="file" accept="application/pdf,.pdf" required className="block w-full text-sm" />
+      <Campo etiqueta={`Archivo: ${FORMATOS_ACEPTADOS}. Máx. 20 MB; un PDF debe tener texto seleccionable (no un escaneo)`} ancho>
+        <input name="archivo" type="file" accept=".pdf,.docx,.xlsx,.txt,.md" required className="block w-full text-sm" />
       </Campo>
       <label className="flex items-start gap-2 text-sm md:col-span-2">
         <input type="checkbox" name="autorizado" required className="mt-1" />
