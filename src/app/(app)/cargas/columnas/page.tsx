@@ -36,6 +36,10 @@ export default async function Columnas(props: PageProps<"/cargas/columnas">) {
   const archivo = prueba && !("error" in prueba) ? prueba.carga.nombre_archivo : null;
   const porCampo = new Map(config.columnas.map((c) => [c.campo, c]));
   const deshacibles = revertibles(cambios, config);
+  // Columnas del archivo probado que ningún dato usa (en las hojas que sí se leen): se ofrecen al editar un dato.
+  const sugeridos = prueba && !("error" in prueba)
+    ? [...new Set(prueba.hojas.filter((h) => !h.excluida && h.lectura && h.lectura.encontrados.length > 0).flatMap((h) => h.lectura!.sinUsar))].slice(0, 40)
+    : [];
 
   return (
     <div className="space-y-8">
@@ -100,7 +104,7 @@ export default async function Columnas(props: PageProps<"/cargas/columnas">) {
                 <span>Dato</span><span>Nombre principal y alternativos</span><span>La columna</span><span className="invisible">Editar</span>
               </div>
               <ul className="divide-y divide-neutral-200">
-                {g.campos.map((campo) => <FilaDato key={campo} c={porCampo.get(campo)!} probarId={archivo ? probar : null} archivo={archivo} />)}
+                {g.campos.map((campo) => <FilaDato key={campo} c={porCampo.get(campo)!} probarId={archivo ? probar : null} archivo={archivo} sugeridos={sugeridos} />)}
               </ul>
             </div>
           </div>
@@ -127,7 +131,7 @@ export default async function Columnas(props: PageProps<"/cargas/columnas">) {
   );
 }
 
-function FilaDato({ c, probarId, archivo }: { c: ColumnaCarga; probarId: string | null; archivo: string | null }) {
+function FilaDato({ c, probarId, archivo, sugeridos }: { c: ColumnaCarga; probarId: string | null; archivo: string | null; sugeridos: string[] }) {
   const { etiqueta, tipo } = CAMPOS[c.campo];
   const [principal, ...alternativos] = c.encabezados;
   const personalizado = principal !== NOMBRE_CUBO[c.campo] || alternativos.length > 0;
@@ -155,7 +159,7 @@ function FilaDato({ c, probarId, archivo }: { c: ColumnaCarga; probarId: string 
         <div className="space-y-2 border-t border-neutral-200 bg-neutral-50 p-3">
           <p className="text-xs text-neutral-500">Nombre interno: <span className="font-mono">{c.campo}</span>{!c.puede_faltar && " · siempre obligatoria: el dashboard y las alertas la necesitan"}</p>
           <FormColumna campo={c.campo} etiqueta={etiqueta} principal={principal} alternativos={alternativos} obligatoria={c.obligatoria}
-            puedeFaltar={c.puede_faltar} probarId={probarId} archivo={archivo} />
+            puedeFaltar={c.puede_faltar} probarId={probarId} archivo={archivo} sugeridos={sugeridos} />
           <RestaurarCampo campo={c.campo} nombreCubo={NOMBRE_CUBO[c.campo]} deFabrica={esDeFabrica(c)} />
         </div>
       </details>

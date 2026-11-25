@@ -2,7 +2,7 @@
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { HojasSaltadas, NombresColumna } from "./etiquetas";
 import { agregarNombreAccion, guardarColumnaAccion, guardarFormatoAccion, probarBorradorAccion, restaurarCampoAccion, revertirCambioAccion, saltarHojaAccion, type Estado } from "./acciones";
 
 function Aviso({ estado }: { estado: Estado }) {
@@ -14,31 +14,21 @@ function Aviso({ estado }: { estado: Estado }) {
 export const CLASE_LISTA = "block h-8 w-full min-w-0 border border-input bg-background px-2 text-sm focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
 
 /**
- * Nombre principal y alternativos de un dato, y si la columna puede faltar. «Probar sin guardar» lee el archivo
+ * Nombres de columna de un dato (etiquetas: el primero es el principal) y si la columna puede faltar. «Probar sin guardar» lee el archivo
  * elegido arriba con este borrador; «Guardar» lo deja para las próximas cargas.
  */
-export function FormColumna({ campo, etiqueta, principal, alternativos, obligatoria, puedeFaltar, probarId, archivo }: {
+export function FormColumna({ campo, etiqueta, principal, alternativos, obligatoria, puedeFaltar, probarId, archivo, sugeridos }: {
   campo: string; etiqueta: string; principal: string; alternativos: string[]; obligatoria: boolean; puedeFaltar: boolean; probarId: string | null; archivo: string | null;
+  /** Columnas del archivo probado que ningún dato usa: se ofrecen para agregarlas con un clic. */
+  sugeridos: string[];
 }) {
   const [guardado, guardar, guardando] = useActionState(guardarColumnaAccion, null);
   const [prueba, probar, probando] = useActionState(probarBorradorAccion, null);
-  const id = `dato-${campo}`;
   return (
     <form action={guardar} className="space-y-3">
       <input type="hidden" name="campo" value={campo} />
       {probarId && <input type="hidden" name="probar" value={probarId} />}
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
-        <div className="space-y-1 text-sm">
-          <label htmlFor={`${id}-principal`} className="block text-neutral-700">Nombre principal</label>
-          <Input id={`${id}-principal`} name="principal" defaultValue={principal} required maxLength={100} className="h-8 font-mono text-sm md:text-sm" />
-          <p className="text-xs text-neutral-500">El que trae la exportación del cubo. Se usa primero.</p>
-        </div>
-        <div className="min-w-0 space-y-1 text-sm">
-          <label htmlFor={`${id}-alternativos`} className="block text-neutral-700">Alternativos, uno por línea, en orden</label>
-          <Textarea id={`${id}-alternativos`} name="alternativos" defaultValue={alternativos.join("\n")} rows={3} className="min-h-20 font-mono text-sm md:text-sm" />
-          <p className="text-xs text-neutral-500">Si el archivo no trae el principal, se usa el primero de estos que venga.</p>
-        </div>
-      </div>
+      <NombresColumna inicial={[principal, ...alternativos]} etiqueta={etiqueta} sugeridos={sugeridos} />
       {puedeFaltar && (
         <label className="flex max-w-prose items-start gap-2 text-sm">
           <input type="checkbox" name="puedeFaltar" defaultChecked={!obligatoria} className="mt-1 size-4" />
@@ -111,11 +101,7 @@ export function FormFormato({ fila, hojas }: { fila: number; hojas: string[] }) 
           <Input id="formato-fila" name="fila" type="number" min={1} max={50} defaultValue={fila} required className="h-8 text-sm md:text-sm" />
           <p className="text-xs text-neutral-500">Las filas de arriba (títulos, filtros) se saltan.</p>
         </div>
-        <div className="min-w-0 space-y-1 text-sm">
-          <label htmlFor="formato-hojas" className="block text-neutral-700">Hojas que se saltan, una por línea</label>
-          <Textarea id="formato-hojas" name="hojas" defaultValue={hojas.join("\n")} rows={3} className="min-h-20 font-mono text-sm md:text-sm" />
-          <p className="max-w-prose text-xs text-neutral-500">Hojas de apoyo que no son ventas. Termina el nombre en «*» para saltar todas las que empiezan así (p. ej. «1. Venta-Kilos x Canal*», cuyo mes cambia). Las demás hojas sin las columnas también se saltan, pero la carga lo avisa.</p>
-        </div>
+        <HojasSaltadas inicial={hojas} />
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" disabled={enviando}>{enviando ? "Guardando…" : "Guardar formato"}</Button>
