@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { requerirAcceso } from "@/lib/auth/acceso";
+import { requerirAccesoAlDia } from "@/lib/auth/acceso";
 import { documentosVisibles, listarDocumentosAdmin, type FilaDocumentoAdmin } from "@/lib/conocimiento/servidor";
 import { fechaCorta, fechaLocal } from "@/lib/format";
 import { FormSubir, Reintentar, Vigencia } from "./formularios";
@@ -14,7 +14,7 @@ const ESTADO: Record<string, { txt: string; variante: "default" | "secondary" | 
 };
 
 export default async function Conocimiento() {
-  const usuario = await requerirAcceso();
+  const usuario = await requerirAccesoAlDia(); // es_admin decide una lectura con service_role: perfil sin caché
   const [visibles, todos] = await Promise.all([documentosVisibles(), usuario.esAdmin ? listarDocumentosAdmin() : Promise.resolve(null)]);
   return (
     <div className="space-y-6">

@@ -1,10 +1,11 @@
 "use server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requerirGestorCargas } from "@/lib/auth/acceso";
 import { rolGestion } from "@/lib/auth/reglas";
+import { TAG_VERSION } from "@/lib/cache-usuario";
 import { subirControl } from "@/lib/cargas/control-servidor";
 import { anularAprobacion, aprobar, descartar, enviarResumenPublicado, MetaCarga, prepararCarga, publicar, retirar, type SubidaCarga } from "@/lib/cargas/servidor";
 
@@ -22,6 +23,7 @@ const listo = (r: { error?: string }, ok: string): Estado => {
   if (r.error) return { error: r.error };
   revalidatePath("/cargas");
   revalidatePath("/", "layout"); // la cabecera y el dashboard muestran la versión vigente
+  updateTag(TAG_VERSION); // caché por usuario de version_vigente (queries.ts): la siguiente lectura va a la base
   return { ok };
 };
 
@@ -51,6 +53,7 @@ export async function publicarCarga(_: Estado, form: FormData): Promise<Estado> 
   if (r.error || !r.version) return { error: r.error ?? "No se pudo publicar." };
   revalidatePath("/cargas");
   revalidatePath("/", "layout"); // la cabecera y el dashboard muestran la versión vigente
+  updateTag(TAG_VERSION); // caché por usuario de version_vigente (queries.ts): la siguiente lectura va a la base
   // Opcional: el resumen del mes al equipo. Solo sale en producción (src/lib/correo.ts); nunca frena la publicación.
   let correo = "";
   if (form.get("correo") === "on") {
@@ -93,6 +96,7 @@ export async function subirControlAccion(_: Estado, form: FormData): Promise<Est
   if (r.error) return { error: r.error };
   revalidatePath("/cargas");
   revalidatePath("/", "layout");
+  updateTag(TAG_VERSION); // caché por usuario de version_vigente (queries.ts): la siguiente lectura va a la base
   return { ok: r.ok };
 }
 

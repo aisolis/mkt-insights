@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { requerirAcceso } from "@/lib/auth/acceso";
+import { requerirAccesoAlDia } from "@/lib/auth/acceso";
 import { gestionaCargas } from "@/lib/auth/reglas";
 import { esParcial } from "@/lib/cargas/alertas";
 import type { ControlBi } from "@/lib/cargas/control-bi";
@@ -41,20 +41,28 @@ const CORREO: Record<string, string> = {
 };
 
 export default async function Cargas(props: PageProps<"/cargas">) {
-  const usuario = await requerirAcceso();
-  const sp = await props.searchParams;
+  // Pasos independientes en paralelo (antes eran cinco esperas en serie). Las lecturas con service_role
+  // (listarCargas y siguientes) arrancan solo después de verificar el acceso.
+  const [usuario, sp] = await Promise.all([requerirAccesoAlDia(), props.searchParams]);
   const gestor = gestionaCargas(usuario);
-  const historial = await versiones();
-  const cargas = gestor ? (await listarCargas()).filter((c) => !["publicada", "retirada"].includes(c.estado)) : [];
+  const [historial, todas] = await Promise.all([versiones(), gestor ? listarCargas() : Promise.resolve([] as FilaCarga[])]);
+  const cargas = todas.filter((c) => !["publicada", "retirada"].includes(c.estado));
   const validadas = cargas.filter((c) => c.estado === "validada").map((c) => c.id);
   const vigente = historial.find((v) => !v.retirada_en);
   // La versión vigente sin conciliar también puede recibir su control de BI después de publicada.
-  const cargaVigente = gestor && vigente && !vigente.conciliada_bi ? await cargaDeVersion(vigente.version) : null;
-  const conControl = [...validadas, ...(cargaVigente ? [cargaVigente] : [])];
-  const [alertas, mesesCarga, aprobaciones, controles] = conControl.length
-    ? await Promise.all([alertasDe(validadas), mesesDeCargas(validadas), aprobacionesDe(validadas), controlesDe(conControl)])
-    : [new Map<string, Alerta[]>(), new Map<string, Mes[]>(), new Map<string, Aprobacion>(), new Map<string, ControlBi>()];
-  const cuarentena = await cuarentenaDe(cargas.filter((c) => c.estado === "validada" && c.filas_cuarentena > 0).map((c) => c.id));
+  const cargaVigenteP = gestor && vigente && !vigente.conciliada_bi ? cargaDeVersion(vigente.version) : Promise.resolve(null);
+  // Alertas, meses y aprobaciones son solo de las validadas: sin validadas salen vacías (igual que antes).
+  const [cargaVigente, alertas, mesesCarga, aprobaciones, controles, cuarentena] = await Promise.all([
+    cargaVigenteP,
+    validadas.length ? alertasDe(validadas) : new Map<string, Alerta[]>(),
+    validadas.length ? mesesDeCargas(validadas) : new Map<string, Mes[]>(),
+    validadas.length ? aprobacionesDe(validadas) : new Map<string, Aprobacion>(),
+    cargaVigenteP.then((cv) => {
+      const conControl = [...validadas, ...(cv ? [cv] : [])];
+      return conControl.length ? controlesDe(conControl) : new Map<string, ControlBi>();
+    }),
+    cuarentenaDe(cargas.filter((c) => c.estado === "validada" && c.filas_cuarentena > 0).map((c) => c.id)),
+  ]);
   const publicada = gestor ? historial.find((v) => String(v.version) === sp.publicada) : undefined;
   const correo = typeof sp.correo === "string" ? CORREO[sp.correo] : undefined;
 
