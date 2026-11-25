@@ -10,6 +10,7 @@ import type {
   TopFila, TopRequest, VariacionFila, VariacionRequest, VersionVigente,
 } from "@/lib/semantic/contracts";
 import type { z } from "zod";
+import type { AdjuntosPregunta, CitaAdjunto } from "./adjuntos";
 import type { TerminoGlosario } from "./glosario";
 
 /** Las funciones del contrato semántico. En la app es src/lib/semantic/queries; en los tests, un cliente directo o un doble. */
@@ -39,10 +40,11 @@ export type Memoria = { periodo?: Periodo; comparado?: Periodo; filtros?: Filtro
  * `documentos`: búsqueda en el conocimiento autorizado (G6); sin ella el asistente responde solo con el cubo.
  * `reglas`: reglas activas del asistente (G8). `memoria`: última consulta de la conversación (G8).
  * `glosario`: solo los términos del glosario que aparecen en la pregunta (ya elegidos; ver glosario.ts).
+ * `adjuntos`: archivos o fotos que la persona subió a esta conversación (ver adjuntos.ts); sin ellos, undefined.
  */
 export type Contexto = {
   fuente: Fuente; version: VersionVigente; estado: EstadoDashboard; documentos?: Buscador;
-  reglas?: ReglaAsistente[]; memoria?: Memoria; glosario?: TerminoGlosario[];
+  reglas?: ReglaAsistente[]; memoria?: Memoria; glosario?: TerminoGlosario[]; adjuntos?: AdjuntosPregunta;
 };
 
 export type Visual =
@@ -87,6 +89,8 @@ export type Respuesta = {
   evidencia: Evidencia;
   /** Contexto de documentos autorizados: se muestra aparte y nunca cuenta como hecho del cubo. */
   contexto: Cita[];
+  /** Lo que se usó de los adjuntos de la persona: aparte de los hechos del cubo y de los documentos autorizados. */
+  adjuntos?: CitaAdjunto[];
   consultas: Omit<Resultado, "resumen" | "hechos" | "visual">[];
 };
 

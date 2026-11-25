@@ -3,12 +3,17 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { CanalChart } from "@/components/dashboard/canal-chart";
 import { SerieChart } from "@/components/dashboard/serie-chart";
+import {
+  ACEPTA_ADJUNTO, BUCKET_ADJUNTOS, FORMATOS_ADJUNTO, MAX_ADJUNTOS, MAX_BYTES_ADJUNTO, MAX_BYTES_IMAGEN, tipoDeAdjunto, unidadAdjunto,
+  type AdjuntoResumen, type CitaAdjunto,
+} from "@/lib/asistente/adjuntos";
 import type { ConversacionResumen, TurnoGuardado, Valoracion } from "@/lib/asistente/conversaciones";
+import { createClient } from "@/lib/supabase/client";
 import type { Respuesta, Visual } from "@/lib/asistente/tipos";
 import { TIPOS, type Cita } from "@/lib/conocimiento/tipos";
 import { fechaCorta, lempiras, mesNombre, capital } from "@/lib/format";
 import {
-  Destello, FlechaArriba, IconoAlerta, IconoCaja, IconoCodigo, IconoDocumento, IconoEscudo, IconoGrafico, IconoMapa,
+  Destello, FlechaArriba, IconoAlerta, IconoCaja, IconoCerrar, IconoClip, IconoCodigo, IconoDocumento, IconoEscudo, IconoGrafico, IconoMapa,
   IconoMas, IconoPersonas, IconoTabla, IconoTendencia,
 } from "./iconos";
 import { AccionesRespuesta } from "./acciones-respuesta";
@@ -27,7 +32,10 @@ const PREGUNTAS_SUGERIR_NUEVA = 20;
 
 /** Conversación abierta: su contexto (query string del dashboard con el que empezó) y ese contexto en palabras. */
 type Activa = { id: string; titulo: string; contexto: string; contextoTxt: string };
-export type ConversacionInicial = { conversacion: ConversacionResumen; contextoTxt: string; turnos: TurnoGuardado[] };
+export type ConversacionInicial = { conversacion: ConversacionResumen; contextoTxt: string; turnos: TurnoGuardado[]; adjuntos?: AdjuntoResumen[] };
+
+/** Un adjunto en pantalla: el del servidor o, mientras se registra, uno provisional con id local. */
+type AdjuntoVista = AdjuntoResumen & { local?: boolean };
 
 type Props = {
   nombre: string;
@@ -70,6 +78,9 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
   });
   const [turnos, setTurnos] = useState<Intercambio[]>(() => aIntercambios(abierta?.turnos ?? []));
   const [preguntas, setPreguntas] = useState(abierta?.conversacion.preguntas ?? 0);
+  const [adjuntos, setAdjuntos] = useState<AdjuntoVista[]>(abierta?.adjuntos ?? []);
+  const [avisoAdjunto, setAvisoAdjunto] = useState<string | null>(null);
+  const [borrador, setBorrador] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [cargando, setCargando] = useState(false);
   const [panelAbierto, setPanelAbierto] = useState(false);
@@ -83,7 +94,7 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
 
   async function preguntar(pregunta: string) {
     pregunta = pregunta.trim();
-    if (pregunta.length < 2 || enviando || cargando) return false;
+    if (pregunta.length < 2 || enviando || cargando || subiendo) return false;
     const actual = activa;
     setTurnos((ts) => [...ts, { pregunta }]);
     setEnviando(true);
@@ -98,6 +109,8 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
         conversacionId?: string; preguntas?: number; conversacion?: ConversacionResumen; turnoId?: number | null; error?: string;
       };
       if (conversacion) ponerEnLista(conversacion);
+      // Una conversación que empezó con un adjunto recibe su título con la primera pregunta.
+      if (conversacion && actual) setActiva((a) => (a?.id === conversacion.id ? { ...a, titulo: conversacion.titulo } : a));
       if (typeof n === "number") setPreguntas(n);
       if (conversacionId && !actual) {
         setActiva({ id: conversacionId, titulo: conversacion?.titulo ?? pregunta, contexto, contextoTxt });
@@ -115,11 +128,77 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
     return true;
   }
 
+  const subiendo = adjuntos.some((a) => a.estado === "subiendo" || a.estado === "procesando");
+
+  /**
+   * Adjunta un archivo o foto a la conversación (si no hay una abierta, el servidor la crea): registrar → subir
+   * directo a Storage → leer. La pregunta se puede escribir mientras tanto; se envía cuando el adjunto está listo.
+   */
+  async function adjuntar(archivo: File) {
+    setAvisoAdjunto(null);
+    const t = tipoDeAdjunto(archivo.name);
+    if (!t) return setAvisoAdjunto(`Solo se aceptan archivos ${FORMATOS_ADJUNTO}.`);
+    if (!archivo.size) return setAvisoAdjunto("El archivo está vacío.");
+    if (archivo.size > MAX_BYTES_ADJUNTO) return setAvisoAdjunto("El archivo pasa de 10 MB.");
+    if (t.tipo === "imagen" && archivo.size > MAX_BYTES_IMAGEN) return setAvisoAdjunto("La foto pasa de 5 MB. Súbela con menos resolución.");
+    if (adjuntos.length >= MAX_ADJUNTOS) return setAvisoAdjunto(`Una conversación admite hasta ${MAX_ADJUNTOS} adjuntos. Quita alguno o empieza otra conversación.`);
+    if (enviando || cargando || subiendo) return;
+
+    const local = `local-${Date.now()}`;
+    const poner = (a: AdjuntoVista) => setAdjuntos((l) => l.map((x) => (x.id === local || x.id === a.id ? a : x)));
+    const fallar = (id: string, error: string) => setAdjuntos((l) => l.map((x) => (x.id === id ? { ...x, estado: "error", error } : x)));
+    setAdjuntos((l) => [...l, { id: local, nombre: archivo.name, tipo: t.tipo, estado: "subiendo", error: null, bytes: archivo.size, paginas: null, modo: null, local: true }]);
+    const pedido = apertura.current;
+    try {
+      const res = await fetch("/api/asistente/adjuntos", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre: archivo.name, bytes: archivo.size, ...(activa ? { conversacionId: activa.id } : { contexto }) }),
+      });
+      const json = (await res.json()) as {
+        adjunto?: AdjuntoResumen; ruta?: string; token?: string; mime?: string; error?: string;
+        conversacion?: ConversacionResumen; contexto?: string; contextoTxt?: string;
+      };
+      if (pedido !== apertura.current) return; // la persona cambió de conversación mientras tanto
+      if (json.conversacion) {
+        ponerEnLista(json.conversacion);
+        if (!activa) {
+          setActiva({ id: json.conversacion.id, titulo: json.conversacion.titulo, contexto: json.contexto ?? contexto, contextoTxt: json.contextoTxt ?? contextoTxt });
+          fijarUrl(json.conversacion.id);
+        }
+      }
+      if (!res.ok || !json.adjunto || !json.ruta || !json.token) return fallar(local, json.error ?? "No se pudo adjuntar el archivo.");
+      const id = json.adjunto.id;
+      poner(json.adjunto);
+
+      const up = await createClient().storage.from(BUCKET_ADJUNTOS).uploadToSignedUrl(json.ruta, json.token, archivo, { contentType: json.mime });
+      if (up.error) return fallar(id, "No se pudo subir el archivo. Quítalo e intenta de nuevo.");
+      setAdjuntos((l) => l.map((x) => (x.id === id ? { ...x, estado: "procesando" } : x)));
+
+      const proc = await fetch(`/api/asistente/adjuntos/${id}`, { method: "POST" });
+      const r = (await proc.json()) as { estado?: "listo" | "error"; error?: string; adjunto?: AdjuntoResumen | null };
+      if (r.adjunto) poner(r.adjunto);
+      else fallar(id, r.error ?? "No se pudo leer el adjunto.");
+    } catch {
+      setAdjuntos((l) => l.map((x) => (x.estado === "subiendo" || x.estado === "procesando" ? { ...x, estado: "error", error: "No se pudo contactar al servidor." } : x)));
+    }
+  }
+
+  async function quitarAdjunto(a: AdjuntoVista) {
+    setAvisoAdjunto(null);
+    if (!a.local) {
+      const res = await fetch(`/api/asistente/adjuntos/${a.id}`, { method: "DELETE" }).catch(() => null);
+      if (!res || (!res.ok && res.status !== 404)) return setAvisoAdjunto("No se pudo quitar el adjunto. Intenta de nuevo.");
+    }
+    setAdjuntos((l) => l.filter((x) => x.id !== a.id));
+  }
+
   function nueva() {
     if (enviando) return;
     apertura.current++;
     setActiva(null);
     setTurnos([]);
+    setAdjuntos([]);
+    setAvisoAdjunto(null);
     setPreguntas(0);
     setCargando(false);
     setPanelAbierto(false);
@@ -133,6 +212,8 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
     const resumen = lista.find((c) => c.id === id);
     setActiva({ id, titulo: resumen?.titulo ?? "", contexto: resumen?.contexto ?? contexto, contextoTxt: "" });
     setTurnos([]);
+    setAdjuntos([]);
+    setAvisoAdjunto(null);
     setPreguntas(resumen?.preguntas ?? 0);
     setCargando(true);
     fijarUrl(id);
@@ -149,6 +230,7 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
       if (pedido !== apertura.current) return;
       setActiva({ id, titulo: json.conversacion.titulo, contexto: json.conversacion.contexto, contextoTxt: json.contextoTxt });
       setTurnos(aIntercambios(json.turnos));
+      setAdjuntos(json.adjuntos ?? []);
       setPreguntas(json.conversacion.preguntas);
     } catch {
       if (pedido === apertura.current) setTurnos([{ pregunta: resumen?.titulo ?? "Conversación", error: "No se pudo cargar la conversación." }]);
@@ -201,8 +283,10 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
       <IconoEscudo className="size-3.5 shrink-0" />
       {conModelo ? "Las cifras salen de consultas a la versión publicada y se verifican antes de mostrarse." : "Sin modelo de IA configurado: responde el análisis automático por reglas."}
       {" "}No se envían datos de clientes a la IA.
+      {adjuntos.length > 0 && " Lo que adjuntas sí se envía a la IA: no subas datos personales de clientes."}
     </p>
   );
+  const cajaAdjuntos = { texto: borrador, setTexto: setBorrador, adjuntos, subiendo, aviso: avisoAdjunto, onAdjuntar: (f: File) => void adjuntar(f), onQuitar: (a: AdjuntoVista) => void quitarAdjunto(a) };
   const panel = (
     <PanelConversaciones conversaciones={lista} activa={activa?.id ?? null} ocupado={enviando}
       onNueva={nueva} onAbrir={(id) => void abrir(id)} onRenombrar={renombrar} onArchivar={archivar} />
@@ -233,7 +317,7 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
               <h1 className="text-center text-4xl font-semibold tracking-tight text-neutral-900">Hola, {nombre}</h1>
               <p className="mt-2 text-center text-lg text-neutral-600">¿Qué quieres saber de la venta?</p>
               <div className="mt-8 w-full max-w-3xl">
-                <Caja grande onPreguntar={preguntar} enviando={enviando} chip={chip} />
+                <Caja grande onPreguntar={preguntar} enviando={enviando} chip={chip} {...cajaAdjuntos} />
               </div>
               <div className="mt-6 grid w-full max-w-5xl gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {sugerencias.map((s, i) => {
@@ -304,7 +388,7 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
                   </button>
                 </div>
               )}
-              <Caja onPreguntar={preguntar} enviando={enviando || cargando} chip={chip} />
+              <Caja onPreguntar={preguntar} enviando={enviando || cargando} chip={chip} {...cajaAdjuntos} />
               {pie}
             </div>
           </div>
@@ -355,9 +439,14 @@ function ChipContexto({ texto, contexto }: { texto: string; contexto: string }) 
 }
 
 /** Caja de pregunta: crece con el texto; Enter envía y Shift+Enter baja de línea. */
-function Caja({ grande, onPreguntar, enviando, chip }: { grande?: boolean; onPreguntar: (p: string) => Promise<boolean>; enviando: boolean; chip: React.ReactNode }) {
-  const [texto, setTexto] = useState("");
+function Caja({ grande, onPreguntar, enviando, chip, texto, setTexto, adjuntos, subiendo, aviso, onAdjuntar, onQuitar }: {
+  grande?: boolean; onPreguntar: (p: string) => Promise<boolean>; enviando: boolean; chip: React.ReactNode;
+  /** El borrador vive en el chat: adjuntar un archivo abre la conversación y cambia de caja sin perder lo escrito. */
+  texto: string; setTexto: (t: string) => void;
+  adjuntos: AdjuntoVista[]; subiendo: boolean; aviso: string | null; onAdjuntar: (f: File) => void; onQuitar: (a: AdjuntoVista) => void;
+}) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const archivo = useRef<HTMLInputElement>(null);
   const ajustar = () => {
     const el = ref.current;
     if (!el) return;
@@ -366,7 +455,7 @@ function Caja({ grande, onPreguntar, enviando, chip }: { grande?: boolean; onPre
   };
   async function enviar() {
     const t = texto;
-    if (t.trim().length < 2 || enviando) return;
+    if (t.trim().length < 2 || enviando || subiendo) return;
     setTexto("");
     requestAnimationFrame(ajustar);
     await onPreguntar(t);
@@ -374,19 +463,58 @@ function Caja({ grande, onPreguntar, enviando, chip }: { grande?: boolean; onPre
   return (
     <form onSubmit={(e) => { e.preventDefault(); void enviar(); }}
       className={`rounded-2xl border border-neutral-200 bg-white shadow-[0_10px_40px_-12px_rgba(15,23,42,0.18)] transition focus-within:border-neutral-300 ${grande ? "p-4" : "p-3"}`}>
+      {adjuntos.length > 0 && (
+        <ul className="mb-2 flex flex-wrap gap-1.5" aria-label="Adjuntos de esta conversación">
+          {adjuntos.map((a) => <ChipAdjunto key={a.id} a={a} onQuitar={() => onQuitar(a)} />)}
+        </ul>
+      )}
+      {aviso && <p role="alert" className="mb-2 px-1 text-xs text-red-700">{aviso}</p>}
       <textarea ref={ref} value={texto} maxLength={500} rows={grande ? 2 : 1} aria-label="Pregunta"
         onChange={(e) => { setTexto(e.target.value); ajustar(); }}
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void enviar(); } }}
         placeholder={grande ? "Pregunta sobre venta, volumen, precio, clientes o facturas…" : "Haz otra pregunta…"}
         className={`w-full resize-none bg-transparent px-1 leading-relaxed outline-none placeholder:text-neutral-400 ${grande ? "text-base" : "text-sm"}`} />
       <div className="mt-2 flex items-center justify-between gap-3">
-        {chip}
-        <button type="submit" aria-label="Preguntar" disabled={enviando || texto.trim().length < 2}
+        <div className="flex min-w-0 items-center gap-2">
+          <input ref={archivo} type="file" accept={ACEPTA_ADJUNTO} className="hidden" tabIndex={-1} aria-hidden
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onAdjuntar(f); }} />
+          <button type="button" onClick={() => archivo.current?.click()} disabled={enviando || subiendo}
+            aria-label="Adjuntar un archivo o una foto" title={`Adjuntar: ${FORMATOS_ADJUNTO}. Hasta 10 MB (fotos, 5 MB).`}
+            className="grid size-8 shrink-0 place-items-center rounded-full border border-neutral-200 text-neutral-600 transition hover:bg-neutral-100 disabled:opacity-40">
+            <IconoClip />
+          </button>
+          {chip}
+        </div>
+        <button type="submit" aria-label="Preguntar" disabled={enviando || subiendo || texto.trim().length < 2}
           className="grid size-9 shrink-0 place-items-center rounded-full bg-neutral-900 text-white transition hover:bg-neutral-700 disabled:bg-neutral-200 disabled:text-neutral-400">
           <FlechaArriba />
         </button>
       </div>
     </form>
+  );
+}
+
+const ESTADO_ADJUNTO: Record<AdjuntoResumen["estado"], string> = { subiendo: "Subiendo…", procesando: "Leyendo…", listo: "", error: "No se pudo usar" };
+
+/** Un adjunto de la conversación junto a la caja: nombre, estado y quitar. */
+function ChipAdjunto({ a, onQuitar }: { a: AdjuntoVista; onQuitar: () => void }) {
+  const trabajando = a.estado === "subiendo" || a.estado === "procesando";
+  const detalle = a.estado === "error" ? a.error ?? ESTADO_ADJUNTO.error
+    : a.estado === "listo" ? (a.modo === "directo" ? "El asistente lo lee completo" : "El asistente busca en él lo que necesita")
+    : ESTADO_ADJUNTO[a.estado];
+  return (
+    <li title={`${a.nombre} — ${detalle}`}
+      className={`flex max-w-full items-center gap-1.5 rounded-full border py-1 pl-2.5 pr-1 text-xs ${a.estado === "error" ? "border-red-200 bg-red-50 text-red-800" : "border-neutral-200 bg-neutral-50 text-neutral-700"}`}>
+      {trabajando
+        ? <span className="size-3 shrink-0 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-700" aria-hidden />
+        : <IconoDocumento className="size-3.5 shrink-0" />}
+      <span className="max-w-48 truncate font-medium">{a.nombre}</span>
+      {(trabajando || a.estado === "error") && <span className="max-w-64 truncate" role={a.estado === "error" ? "alert" : "status"}>{detalle}</span>}
+      <button type="button" onClick={onQuitar} disabled={trabajando} aria-label={`Quitar ${a.nombre}`}
+        className="grid size-5 shrink-0 place-items-center rounded-full hover:bg-neutral-200 disabled:opacity-40">
+        <IconoCerrar className="size-3" />
+      </button>
+    </li>
   );
 }
 
@@ -417,6 +545,7 @@ export function RespuestaVista({ r }: { r: Respuesta }) {
           <p>{r.texto}</p>
         </div>
         <ContextoDocumentos citas={r.contexto ?? []} />
+        <ContextoAdjuntos citas={r.adjuntos ?? []} />
       </div>
     );
   }
@@ -435,6 +564,7 @@ export function RespuestaVista({ r }: { r: Respuesta }) {
       )}
 
       <ContextoDocumentos citas={r.contexto ?? []} />
+      <ContextoAdjuntos citas={r.adjuntos ?? []} />
 
       {advertencias.length > 0 && (
         <ul className="space-y-1 text-xs text-amber-800">
@@ -538,6 +668,30 @@ function Lista({ titulo, items, punto, vacio }: { titulo: string; items: string[
         // Dos consultas iguales dan el mismo hecho dos veces: se muestra una vez.
         <ul className="space-y-1.5 text-[13px] leading-relaxed text-neutral-700 tabular-nums">{[...new Set(items)].map((h) => <li key={h}>{h}</li>)}</ul>
       ) : <p className="text-[13px] text-neutral-400">{vacio}</p>}
+    </div>
+  );
+}
+
+/** Lo que se usó de los adjuntos de la persona: aparte de los hechos del cubo y de los documentos autorizados. */
+function ContextoAdjuntos({ citas }: { citas: CitaAdjunto[] }) {
+  if (!citas.length) return null;
+  return (
+    <div className="space-y-3 rounded-xl border border-violet-200 bg-violet-50/60 p-4 text-xs">
+      <div>
+        <div className="flex items-center gap-1.5 font-semibold text-violet-900"><IconoClip className="size-3.5" /> De tus adjuntos</div>
+        <p className="mt-0.5 text-violet-900/80">Es lo que tú subiste a esta conversación: no son datos de venta de BIA ni documentos autorizados.</p>
+      </div>
+      <ol className="space-y-3">
+        {citas.map((c) => (
+          <li key={c.id} className="space-y-1">
+            <div className="font-medium text-neutral-900">
+              [{c.id}] {c.nombre}
+              {c.pagina !== null && unidadAdjunto(c.tipo) && <span className="font-normal text-neutral-600"> · {unidadAdjunto(c.tipo)} {c.pagina}</span>}
+            </div>
+            <blockquote className="border-l-2 border-violet-300 pl-2 text-neutral-700">{c.extracto}</blockquote>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { rangoAcumulado } from "@/lib/dashboard/analisis";
 import { advertencias, S1_SIN_CERTIFICAR_HASTA } from "@/lib/dashboard/params";
 import { fechaCorta, periodoLargo } from "@/lib/format";
 import type { Kpi } from "@/lib/semantic/contracts";
+import { citaDeExtracto, extractoRelevante, sinTexto, type AdjuntoCitable, type CitaAdjunto } from "./adjuntos";
 import { reglaBloqueo, reglaFueraDeAlcance } from "./alcance";
 import { hipotesis, interpretar, llamadas, redactar } from "./determinista";
 import { ErrorHerramienta, ejecutar } from "./herramientas";
@@ -27,13 +28,15 @@ export async function responder(
   const regla = reglaBloqueo(pregunta, ctx.reglas) ?? reglaFueraDeAlcance(pregunta);
   if (regla) {
     // Sin cifras del cubo. Si el tema lo admite, se muestran los documentos autorizados que hablen de eso.
-    const contexto = regla.documentos ? await contextoDocumentos(pregunta, ctx) : [];
-    const texto = contexto.length
-      ? `Los datos de venta no responden eso: ${regla.motivo} Abajo está lo que dicen los documentos autorizados sobre el tema; es contexto, no cifras del cubo.`
+    // Lo mismo con los adjuntos de la persona: se muestran sus extractos, sin pasar por el modelo.
+    const [contexto, adjuntos] = regla.documentos ? await Promise.all([contextoDocumentos(pregunta, ctx), contextoAdjuntos(pregunta, ctx)]) : [[], []];
+    const fuentes = [contexto.length && "los documentos autorizados", adjuntos.length && "tus adjuntos"].filter(Boolean).join(" y ");
+    const texto = fuentes
+      ? `Los datos de venta no responden eso: ${regla.motivo} Abajo está lo que dicen ${fuentes} sobre el tema; es contexto, no cifras del cubo.`
       : `No puedo responder eso. ${regla.motivo}`;
     return {
       estado: "fuera_de_alcance", modo: "determinista", texto, hechos: [], hipotesis: [], visuales: [],
-      evidencia: evidencia([], ctx, []), contexto, consultas: [],
+      evidencia: evidencia([], ctx, []), contexto, ...(adjuntos.length ? { adjuntos } : {}), consultas: [],
     };
   }
 
@@ -41,9 +44,13 @@ export async function responder(
     try {
       const salida = await preguntarAlModelo(pregunta, historial, ctx, modelo, opciones.uso);
       const citadas = salida.citas.map((id) => salida.documentos.find((d) => d.id === id)).filter((d): d is Cita => !!d);
+      // Adjuntos que el modelo dice haber usado: sus cifras valen (junto a su [aN]) y se muestran aparte.
+      const adjCitados = [...new Set(salida.citas)].map((id) => salida.adjuntos.find((a) => a.id === id)).filter((a): a is AdjuntoCitable => !!a);
+      const adjuntos = adjCitados.map(sinTexto);
+      const deCitas = [...citadas.map((c) => c.extracto), ...adjCitados.map((a) => a.texto)];
       if (salida.resultados.length) {
         const resultados = await conKpi(salida.resultados, ctx);
-        const permitidas = cifrasPermitidas([...resultados.flatMap((r) => [r.resumen, r.hechos]), ...citadas.map((c) => c.extracto)]);
+        const permitidas = cifrasPermitidas([...resultados.flatMap((r) => [r.resumen, r.hechos]), ...deCitas]);
         const malas = cifrasNoVerificadas([salida.texto, ...salida.hipotesis].join(" "), permitidas);
         const avisos: string[] = [];
         let texto = salida.texto;
@@ -59,11 +66,13 @@ export async function responder(
           contexto = await contextoDocumentos(pregunta, ctx);
         }
         const elegidos = salida.visuales.map((id) => resultados.find((r) => r.id === id)).filter((r): r is Resultado => !!r?.visual);
-        return armar("modelo", texto, hips, elegidos.length ? elegidos : resultados, resultados, ctx, avisos, contexto);
+        // Si se descartó el texto del modelo, sus citas de adjuntos ya no acompañan nada: no se muestran.
+        return armar("modelo", texto, hips, elegidos.length ? elegidos : resultados, resultados, ctx, avisos, contexto, avisos.length ? [] : adjuntos);
       }
-      // El modelo respondió sin consultar el cubo: solo vale si no escribió cifras (o si salen de lo que citó).
-      if (salida.texto && !cifrasNoVerificadas(salida.texto, cifrasPermitidas(citadas.map((c) => c.extracto))).length)
-        return armar("modelo", salida.texto, salida.hipotesis, [], [], ctx, [], citadas);
+      // El modelo respondió sin consultar el cubo (p. ej. una pregunta sobre un adjunto): solo vale si no escribió
+      // cifras o si salen de lo que citó.
+      if (salida.texto && !cifrasNoVerificadas(salida.texto, cifrasPermitidas(deCitas)).length)
+        return armar("modelo", salida.texto, salida.hipotesis, [], [], ctx, [], citadas, adjuntos);
     } catch (e) {
       console.error("asistente: el modelo falló, se responde en modo determinista", e);
       return determinista(pregunta, ctx, ["El modelo no respondió; se muestra el análisis automático."]);
@@ -81,8 +90,22 @@ async function determinista(pregunta: string, ctx: Contexto, avisos: string[]): 
     if (!(e instanceof ErrorHerramienta)) throw e;
     return { ...armar("determinista", `No pude consultar eso: ${e.message}`, [], [], resultados, ctx, avisos, []), estado: "sin_datos" };
   }
-  const contexto = await contextoDocumentos(pregunta, ctx);
-  return armar("determinista", redactar(resultados, plan), hipotesis(resultados, plan), resultados, resultados, ctx, avisos, contexto);
+  const [contexto, adjuntos] = await Promise.all([contextoDocumentos(pregunta, ctx), contextoAdjuntos(pregunta, ctx)]);
+  return armar("determinista", redactar(resultados, plan), hipotesis(resultados, plan), resultados, resultados, ctx, avisos, contexto, adjuntos);
+}
+
+/**
+ * Extractos de los adjuntos de la persona relevantes para la pregunta, para las respuestas que no redacta el
+ * modelo. Si la búsqueda falla, la respuesta sigue sin ellos.
+ */
+async function contextoAdjuntos(pregunta: string, ctx: Contexto, max = 3): Promise<CitaAdjunto[]> {
+  if (!ctx.adjuntos) return [];
+  try {
+    return (await ctx.adjuntos.buscar(pregunta)).filter((e) => extractoRelevante(e)).slice(0, max).map((e, i) => sinTexto(citaDeExtracto(e, `a${i + 1}`)));
+  } catch (e) {
+    console.error("asistente: la búsqueda en los adjuntos falló", e);
+    return [];
+  }
 }
 
 /** Documentos relevantes para la pregunta. Si la búsqueda falla, la respuesta sigue sin contexto: los datos de
@@ -111,7 +134,7 @@ function planDe(resultados: Resultado[], ctx: Contexto) {
   return { ...interpretar("", ctx), ...(r ? { periodo: r.periodo!, comparado: r.comparado! } : {}) };
 }
 
-function armar(modo: Respuesta["modo"], texto: string, hips: string[], visibles: Resultado[], resultados: Resultado[], ctx: Contexto, avisos: string[], contexto: Cita[]): Respuesta {
+function armar(modo: Respuesta["modo"], texto: string, hips: string[], visibles: Resultado[], resultados: Resultado[], ctx: Contexto, avisos: string[], contexto: Cita[], adjuntos: CitaAdjunto[] = []): Respuesta {
   return {
     estado: "ok", modo, texto,
     hechos: resultados.flatMap((r) => r.hechos),
@@ -119,6 +142,7 @@ function armar(modo: Respuesta["modo"], texto: string, hips: string[], visibles:
     visuales: visibles.flatMap((r) => (r.visual ? [r.visual] : [])).slice(0, 3),
     evidencia: evidencia(resultados, ctx, avisos),
     contexto,
+    ...(adjuntos.length ? { adjuntos } : {}),
     consultas: resultados.map(({ id, herramienta, argumentos, calculo, periodo, comparado, filtros, datos }) => ({ id, herramienta, argumentos, calculo, periodo, comparado, filtros, datos })),
   };
 }

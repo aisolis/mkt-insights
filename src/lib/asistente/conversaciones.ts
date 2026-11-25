@@ -37,6 +37,8 @@ export const MAX_LISTA = 30;
 /** Turnos (pregunta + respuesta) que ve el modelo: 3 turnos = los últimos 6 mensajes. */
 export const TURNOS_HISTORIAL = 3;
 export const MAX_TITULO = 120;
+/** Título provisional de una conversación que empieza con un adjunto, hasta que llega la primera pregunta. */
+export const TITULO_ADJUNTO = "Adjunto: ";
 
 export const IdConversacion = z.uuid();
 export const Titulo = z.string().trim().min(1).max(MAX_TITULO);
@@ -151,7 +153,7 @@ export type UsoTurno = {
  * `reglas`: ids de las reglas del asistente activas al responder (G8), para auditar con qué reglas se respondió.
  * Devuelve el id del turno (para valorarlo o agregarlo al informe); si falla, null y no rompe la respuesta.
  */
-export async function registrarTurno(fila: FilaBitacora & UsoTurno & { conversacion_id: string; reglas: string[]; glosario?: string[] | null }): Promise<number | null> {
+export async function registrarTurno(fila: FilaBitacora & UsoTurno & { conversacion_id: string; reglas: string[]; glosario?: string[] | null; adjuntos?: string[] | null }): Promise<number | null> {
   try {
     const { data, error } = await createServiceClient().schema("ventas").from("consulta_asistente").insert(fila).select("id").single();
     if (error) console.error("bitácora del asistente:", error.message);

@@ -2,6 +2,7 @@ import { Chat, type ConversacionInicial, type Sugerencia } from "@/components/as
 import { leerParams, periodoComparado, queryString } from "@/lib/dashboard/params";
 import { describirFiltros, rango } from "@/lib/asistente/texto";
 import { capital } from "@/lib/format";
+import { listarAdjuntos } from "@/lib/asistente/adjuntos-servidor";
 import { modeloParaPregunta } from "@/lib/asistente/config-servidor";
 import { cargarTurnos, contextoEnPalabras, listarConversaciones, obtenerConversacion } from "@/lib/asistente/conversaciones";
 import { versionVigente } from "@/lib/semantic/queries";
@@ -26,10 +27,15 @@ const SUGERENCIAS: Sugerencia[] = [
 ];
 
 /** La conversación del enlace (?c=id) con sus turnos; null si no existe, es de otro usuario o está archivada. */
-async function conversacionDelEnlace(id: string, version: VersionVigente): Promise<ConversacionInicial | null> {
+async function conversacionDelEnlace(id: string, version: VersionVigente, usuarioId: string): Promise<ConversacionInicial | null> {
   const conversacion = await obtenerConversacion(id);
   if (!conversacion) return null;
-  return { conversacion, contextoTxt: contextoEnPalabras(conversacion.contexto, version).texto, turnos: await cargarTurnos(id) };
+  // Si los adjuntos no cargan, la conversación se abre igual (sin ellos en pantalla).
+  const [turnos, adjuntos] = await Promise.all([
+    cargarTurnos(id),
+    listarAdjuntos(id, usuarioId).catch((e) => { console.error("asistente (adjuntos):", e); return []; }),
+  ]);
+  return { conversacion, contextoTxt: contextoEnPalabras(conversacion.contexto, version).texto, turnos, adjuntos };
 }
 
 export default async function Asistente(props: PageProps<"/asistente">) {
@@ -51,7 +57,7 @@ export default async function Asistente(props: PageProps<"/asistente">) {
   // Si la lista o la conversación no cargan, el asistente sigue funcionando: se empieza una conversación nueva.
   const [conversaciones, abierta, modelo] = await Promise.all([
     conversacionesP,
-    c ? conversacionDelEnlace(c, version).catch((e) => { console.error("asistente:", e); return null; }) : null,
+    c ? conversacionDelEnlace(c, version, usuario.id).catch((e) => { console.error("asistente:", e); return null; }) : null,
     modeloP,
   ]);
   // Con una conversación abierta no se reenvía la pregunta sugerida (?sobre=): ya se hizo al crearla.

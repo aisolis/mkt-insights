@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { accesoApi } from "@/lib/auth/acceso";
 import {
-  contarPreguntas, contextoEnPalabras, crearConversacion, historialReciente, IdConversacion, obtenerConversacion,
-  registrarTurno, tituloDe, tocarConversacion, type ConversacionResumen,
+  contarPreguntas, contextoEnPalabras, crearConversacion, historialReciente, IdConversacion, MAX_TITULO, obtenerConversacion,
+  registrarTurno, renombrarConversacion, TITULO_ADJUNTO, tituloDe, tocarConversacion, type ConversacionResumen,
 } from "@/lib/asistente/conversaciones";
+import { adjuntosParaPregunta } from "@/lib/asistente/adjuntos-servidor";
 import { acotarMemoria, memoriaDe } from "@/lib/asistente/memoria";
 import { terminosEnPregunta } from "@/lib/asistente/glosario";
 import { glosarioActivo } from "@/lib/asistente/glosario-servidor";
@@ -55,16 +56,22 @@ export async function POST(request: Request) {
 
   const contexto = entrada.data.contexto ?? conversacion.contexto;
   const { estado } = contextoEnPalabras(contexto, version);
-  const [{ historial, ultimaOk }, reglas, terminos] = await Promise.all([
+  const [{ historial, ultimaOk }, reglas, terminos, adjuntos] = await Promise.all([
     conversacionId ? historialReciente(conversacion.id) : { historial: [], ultimaOk: null },
     reglasActivas(), // si fallan, [] y el asistente responde con sus reglas fijas
     glosarioActivo(), // si falla, [] y se responde sin glosario
+    // Archivos o fotos que la persona subió a esta conversación (que ya se comprobó que es suya); si falla, sin ellos.
+    conversacionId ? adjuntosParaPregunta(conversacion.id, usuario.id) : null,
   ]);
+  // Una conversación que empezó con un adjunto lleva el nombre del archivo: la primera pregunta le da su título.
+  if (conversacionId && conversacion.preguntas === 0 && conversacion.titulo.startsWith(TITULO_ADJUNTO)) {
+    conversacion = (await renombrarConversacion(conversacion.id, tituloDe(pregunta, MAX_TITULO)).catch(() => null)) ?? conversacion;
+  }
   // Del glosario solo van al modelo los términos de esta pregunta (y, con menos peso, los de la pregunta anterior,
   // para «¿y eso cómo se calcula?»).
   const anterior = historial.filter((t) => t.rol === "usuario").at(-1)?.texto;
   const glosario = terminosEnPregunta(anterior ? [pregunta, anterior] : [pregunta], terminos);
-  const ctx: Contexto = { fuente, version, estado, documentos: buscarDocumentos, memoria: acotarMemoria(memoriaDe(ultimaOk), version.metadatos), reglas, glosario };
+  const ctx: Contexto = { fuente, version, estado, documentos: buscarDocumentos, memoria: acotarMemoria(memoriaDe(ultimaOk), version.metadatos), reglas, glosario, ...(adjuntos ? { adjuntos } : {}) };
 
   // El elegido en Configuración del asistente (o automático). Con el tope de gasto del mes alcanzado o un modelo
   // fuera de la lista de permitidos responde el análisis automático, con aviso y marcado en la bitácora (G9).
@@ -75,6 +82,7 @@ export async function POST(request: Request) {
     usuario_id: usuario.id, conversacion_id: conversacion.id, version: version.version, contexto, pregunta,
     modelo: modelo?.modelo ?? null, reglas: reglas.map((r) => r.id), motivo_automatico: motivo,
     glosario: modelo ? glosario.map((t) => t.id) : null, // solo el modelo recibe el glosario
+    adjuntos: adjuntos?.ids ?? null,
   };
   // Si la base falla al cerrar, la respuesta ya quedó registrada: no se convierte en error ni en un segundo turno.
   const cierre = async () => {
