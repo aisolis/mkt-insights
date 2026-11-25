@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { accesoApi } from "@/lib/auth/acceso";
+import { listarAdjuntos } from "@/lib/asistente/adjuntos-servidor";
 import {
   archivarConversacion, cargarTurnos, contextoEnPalabras, obtenerConversacion, renombrarConversacion, Titulo,
 } from "@/lib/asistente/conversaciones";
@@ -21,9 +22,13 @@ export async function GET(_req: NextRequest, ctx: RouteContext<"/api/asistente/c
   try {
     const conversacion = await obtenerConversacion(id);
     if (!conversacion) return NO_ENCONTRADA();
-    const [turnos, version] = await Promise.all([cargarTurnos(id), versionVigente()]);
+    // Si los adjuntos no cargan, la conversación se abre igual (sin ellos en pantalla).
+    const [turnos, version, adjuntos] = await Promise.all([
+      cargarTurnos(id), versionVigente(),
+      listarAdjuntos(id, usuario.id).catch((e) => { console.error("asistente (adjuntos):", e); return []; }),
+    ]);
     const contextoTxt = version ? contextoEnPalabras(conversacion.contexto, version).texto : "";
-    return Response.json({ conversacion, contextoTxt, turnos });
+    return Response.json({ conversacion, contextoTxt, turnos, adjuntos });
   } catch (e) {
     return FALLO(e);
   }

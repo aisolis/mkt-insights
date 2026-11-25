@@ -53,3 +53,9 @@ export const IconoInforme = ({ className = "size-4" }: P) => (
 export const IconoCheck = ({ className = "size-4" }: P) => (
   <svg {...base} className={className}><path d="M5 12l5 5 9-10" /></svg>
 );
+export const IconoClip = ({ className = "size-4" }: P) => (
+  <svg {...base} className={className}><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 01-7.8-7.8l8.9-8.9a3.7 3.7 0 015.2 5.2l-8.9 8.9a1.8 1.8 0 01-2.6-2.6l8.2-8.2" /></svg>
+);
+export const IconoCerrar = ({ className = "size-4" }: P) => (
+  <svg {...base} className={className}><path d="M6 6l12 12M18 6L6 18" /></svg>
+);
