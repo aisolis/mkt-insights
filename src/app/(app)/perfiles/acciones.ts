@@ -1,8 +1,9 @@
 "use server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
 import { cambiarPerfil, guardarAlcance, invitar, reenviarInvitacion, type Alcance, type Cambio } from "@/lib/auth/admin";
 import { requerirAdmin } from "@/lib/auth/acceso";
+import { tagUsuario } from "@/lib/cache-usuario";
 
 export type EstadoAccion = { error?: string; ok?: string } | null;
 
@@ -49,6 +50,7 @@ export async function accionUsuario(_: EstadoAccion, form: FormData): Promise<Es
   }
   if (r.error) return r;
   revalidatePath("/perfiles");
+  updateTag(tagUsuario(userId.data)); // su perfil y su versión vigente en caché (acceso.ts, queries.ts) se leen de nuevo
   // Qué cambió, dicho en el lugar del botón (el botón ya muestra el cambio contrario).
   const ok = d.accion === "reenviar" ? "Invitación reenviada."
     : d.accion === "nivel" ? `Ahora es ${d.valor === "plus" ? "Plus" : "Estándar"}.`
@@ -71,6 +73,7 @@ export async function guardarAlcanceAccion(_: EstadoAccion, form: FormData): Pro
   const r = await guardarAlcance(userId.data, final);
   if (r.error) return r;
   revalidatePath("/perfiles");
+  updateTag(tagUsuario(userId.data)); // la versión vigente en caché trae el ámbito: se lee de nuevo
   return { ok: final ? "Ámbito guardado: vale desde su próxima consulta." : "Ahora ve toda la venta interna." };
 }
 

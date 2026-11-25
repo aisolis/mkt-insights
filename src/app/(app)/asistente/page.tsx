@@ -33,19 +33,26 @@ async function conversacionDelEnlace(id: string, version: VersionVigente): Promi
 }
 
 export default async function Asistente(props: PageProps<"/asistente">) {
+  // La versión sale junto con el acceso (comparten la sesión verificada); se usa solo si el acceso pasó.
+  const versionP = versionVigente();
+  versionP.catch(() => {}); // si requerirAcceso() redirige, que no quede como rechazo sin manejar
   const usuario = await requerirAcceso(); // el layout no se vuelve a ejecutar en cada navegación
-  const version = await versionVigente();
+  // Lo que no depende de la versión arranca ya (antes iba después, en serie): la lista y el modelo del asistente.
+  const conversacionesP = listarConversaciones().catch((e) => { console.error("asistente:", e); return []; });
+  const modeloP = modeloParaPregunta();
+  modeloP.catch(() => {}); // sin versión publicada no se espera: que no quede como rechazo sin manejar
+  const [version, sp] = await Promise.all([versionP, props.searchParams]);
   if (!version) {
     return <p className="rounded-lg border border-dashed border-neutral-300 p-10 text-center text-sm text-neutral-500">Todavía no hay una versión publicada.</p>;
   }
-  const sp = await props.searchParams;
   const estado = leerParams(sp, version.metadatos.periodos);
   const cmp = periodoComparado(estado.periodo, estado.comparar);
   const c = typeof sp.c === "string" ? sp.c : undefined;
   // Si la lista o la conversación no cargan, el asistente sigue funcionando: se empieza una conversación nueva.
-  const [conversaciones, abierta] = await Promise.all([
-    listarConversaciones().catch((e) => { console.error("asistente:", e); return []; }),
+  const [conversaciones, abierta, modelo] = await Promise.all([
+    conversacionesP,
     c ? conversacionDelEnlace(c, version).catch((e) => { console.error("asistente:", e); return null; }) : null,
+    modeloP,
   ]);
   // Con una conversación abierta no se reenvía la pregunta sugerida (?sobre=): ya se hizo al crearla.
   const sobre = !abierta && typeof sp.sobre === "string" ? SOBRE[sp.sobre]?.(estado.periodo.anio) : undefined;
@@ -61,7 +68,7 @@ export default async function Asistente(props: PageProps<"/asistente">) {
       version={version.version}
       inicial={sobre}
       // Con el tope de gasto alcanzado o un modelo no permitido responde el análisis automático (G9).
-      conModelo={(await modeloParaPregunta()).modelo !== null}
+      conModelo={modelo.modelo !== null}
       sugerencias={SUGERENCIAS}
       conversaciones={conversaciones}
       abierta={abierta}

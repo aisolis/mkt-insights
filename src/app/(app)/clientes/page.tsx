@@ -19,19 +19,23 @@ const ORDEN: EstadoCliente[] = ["activos", "nuevos", "recuperados", "continuan",
  * Es el único lugar con código y nombre de cliente; nada de aquí va al asistente (S15, S22).
  */
 export default async function Clientes(props: PageProps<"/clientes">) {
+  // La versión y el transporte de clientes salen junto con el acceso (antes, en serie); nada se usa si no pasa.
+  const versionP = versionVigente();
+  const consultasP = consultasClientesSesion();
+  versionP.catch(() => {}); // si requerirPlus() redirige, que no queden como rechazos sin manejar
+  consultasP.catch(() => {});
   await requerirPlus();
-  const version = await versionVigente();
+  const [version, sp] = await Promise.all([versionP, props.searchParams]);
   if (!version) return <SinVersion />;
 
   const meta = version.metadatos;
-  const sp = await props.searchParams;
   const estado = leerParams(sp, meta.periodos);
   const { periodo, filtros } = estado;
   const cmp = periodoComparado(periodo, estado.comparar);
   const ver = leerEstadoCliente(sp.ver);
   const pagina = Math.max(1, Math.floor(Number(Array.isArray(sp.pagina) ? sp.pagina[0] : sp.pagina) || 1));
 
-  const { clientesResumen, clientesLista } = await consultasClientesSesion();
+  const { clientesResumen, clientesLista } = await consultasP;
   const base = { version: version.version, periodo, comparar: cmp, filtros };
   const [resumen, lista] = await Promise.all([
     clientesResumen(base),
