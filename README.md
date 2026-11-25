@@ -36,5 +36,5 @@ PARITY_DIR="…/marketing/analisis" PARITY_CARGA_ID=<uuid> npm test   # paridad 
 ## Reglas que no se negocian
 - Importes en `numeric`; nunca redondear en JavaScript.
 - Dashboard, chat y exportación leen la misma versión publicada y las mismas funciones SQL.
-- Nunca "conciliado con BI" por coincidir con el Excel: requiere el reporte de BI.
+- Nunca "conciliado con BI" por coincidir con el Excel: requiere el reporte de BI. El Excel es la misma fuente que se cargó; el reporte de BI es la única comprobación independiente (el porqué completo, en `docs/runbook-mensual.md`, sección 5).
 - `subgrupo` y datos de cliente no se envían al modelo de IA. Secretos solo en servidor.
