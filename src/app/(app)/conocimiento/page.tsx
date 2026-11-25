@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { requerirAccesoAlDia } from "@/lib/auth/acceso";
 import { documentosVisibles, listarDocumentosAdmin, type FilaDocumentoAdmin } from "@/lib/conocimiento/servidor";
+import { TIPOS } from "@/lib/conocimiento/tipos";
 import { fechaCorta, fechaLocal } from "@/lib/format";
 import { FormSubir, Reintentar, Vigencia } from "./formularios";
 
@@ -22,7 +23,7 @@ export default async function Conocimiento() {
         <h1 className="text-xl font-semibold">Conocimiento</h1>
         <p className="text-sm text-neutral-500">
           Estudios y documentos autorizados que el asistente cita como contexto. Lo que dicen no son datos de venta: el asistente
-          los muestra aparte de los hechos del cubo, con documento y página.
+          los muestra aparte de los hechos del cubo, con documento y página (u hoja o sección, según el archivo).
         </p>
       </div>
 
@@ -44,14 +45,16 @@ export default async function Conocimiento() {
                 <div className="space-y-0.5">
                   <div className="font-medium">{d.titulo}</div>
                   <div className="text-xs text-neutral-500">
-                    {d.fuente}{d.fecha_documento && ` · ${fechaCorta(d.fecha_documento)}`}{d.paginas && ` · ${d.paginas} págs.`}
+                    {d.fuente}{d.fecha_documento && ` · ${fechaCorta(d.fecha_documento)}`}{d.paginas && ` · ${d.paginas} ${TIPOS[d.tipo].unidades}`}
                     {d.version > 1 && ` · v${d.version}`}{d.propietario && ` · dueño: ${d.propietario}`}
                     {d.vigente_hasta && ` · vigente hasta ${fechaCorta(d.vigente_hasta)}`}
                     {d.audiencia === "plus" && " · solo Plus"}
                   </div>
                   {d.descripcion && <p className="text-sm text-neutral-700">{d.descripcion}</p>}
                 </div>
-                <a href={`/api/conocimiento/${d.id}`} target="_blank" rel="noopener" className="text-sm underline-offset-4 hover:underline">Abrir PDF</a>
+                <a href={`/api/conocimiento/${d.id}`} target="_blank" rel="noopener" className="text-sm underline-offset-4 hover:underline">
+                  {d.tipo === "pdf" ? "Abrir PDF" : `Descargar ${TIPOS[d.tipo].nombre}`}
+                </a>
               </li>
             ))}
           </ul>
@@ -96,7 +99,7 @@ function Administracion({ filas }: { filas: FilaDocumentoAdmin[] }) {
                   )}
                   {d.fragmentos_sospechosos > 0 && (
                     <div className="max-w-80 text-xs whitespace-normal text-amber-900">
-                      {d.fragmentos_sospechosos === 1 ? "1 fragmento tiene" : `${d.fragmentos_sospechosos} fragmentos tienen`} texto que parece instrucciones para la IA: no se usan. Revisa el PDF.
+                      {d.fragmentos_sospechosos === 1 ? "1 fragmento tiene" : `${d.fragmentos_sospechosos} fragmentos tienen`} texto que parece instrucciones para la IA: no se usan. Revisa el archivo.
                     </div>
                   )}
                   {d.motivo_retiro && <div className="max-w-80 text-xs whitespace-normal text-neutral-600">Retiro: {d.motivo_retiro}</div>}
@@ -105,7 +108,7 @@ function Administracion({ filas }: { filas: FilaDocumentoAdmin[] }) {
                 <TableCell>{d.audiencia === "plus" ? "Solo Plus" : "Todos"}</TableCell>
                 <TableCell><Badge variant={ESTADO[d.estado]?.variante ?? "outline"}>{ESTADO[d.estado]?.txt ?? d.estado}</Badge></TableCell>
                 <TableCell className="text-xs text-neutral-600">
-                  {d.fragmentos ? `${d.fragmentos} fragmentos · ${d.paginas} págs.` : "—"}
+                  {d.fragmentos ? `${d.fragmentos} fragmentos · ${d.paginas} ${TIPOS[d.tipo].unidades}` : "—"}
                   {d.fragmentos > 0 && <div>{d.modelo_embedding ? `semántica: ${d.modelo_embedding}` : "solo texto"}</div>}
                 </TableCell>
                 <TableCell className="text-neutral-600">{fechaLocal(d.creado_en)}</TableCell>

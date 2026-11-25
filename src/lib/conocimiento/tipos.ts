@@ -4,6 +4,30 @@ import { z } from "zod";
 export const BUCKET = "conocimiento";
 export const MAX_BYTES = 20 * 1024 * 1024;
 
+/**
+ * Formatos que se aceptan (0030). `unidad` es cómo se llama la «página» de una cita en cada uno: un PDF tiene
+ * páginas, un Excel hojas y un Word o un texto se cortan en secciones.
+ */
+export const TipoDocumento = z.enum(["pdf", "docx", "xlsx", "txt", "md"]);
+export type TipoDocumento = z.infer<typeof TipoDocumento>;
+
+export const TIPOS: Record<TipoDocumento, { nombre: string; mime: string; unidad: string; unidades: string; abrev: string }> = {
+  pdf: { nombre: "PDF", mime: "application/pdf", unidad: "página", unidades: "págs.", abrev: "pág." },
+  docx: { nombre: "Word", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", unidad: "sección", unidades: "secciones", abrev: "sección" },
+  xlsx: { nombre: "Excel", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", unidad: "hoja", unidades: "hojas", abrev: "hoja" },
+  txt: { nombre: "texto", mime: "text/plain", unidad: "sección", unidades: "secciones", abrev: "sección" },
+  md: { nombre: "Markdown", mime: "text/markdown", unidad: "sección", unidades: "secciones", abrev: "sección" },
+};
+
+/** El tipo según la extensión del archivo; null si no se acepta. */
+export function tipoDeArchivo(nombre: string): TipoDocumento | null {
+  const ext = /\.([a-z0-9]+)$/i.exec(nombre.trim())?.[1].toLowerCase();
+  const r = TipoDocumento.safeParse(ext);
+  return r.success ? r.data : null;
+}
+
+export const FORMATOS_ACEPTADOS = "PDF, Word (.docx), Excel (.xlsx) o texto (.txt, .md)";
+
 export const Audiencia = z.enum(["estandar", "plus"]);
 export type Audiencia = z.infer<typeof Audiencia>;
 
@@ -15,6 +39,7 @@ export const Encontrado = z.object({
   fuente: z.string(),
   fecha_documento: z.string().nullable(),
   pagina: z.number(),
+  tipo: TipoDocumento.optional(), // sin dato = PDF (base anterior a 0030)
   texto: z.string(),
   coincidencias: z.number(),
   terminos: z.number(),
@@ -35,6 +60,7 @@ export const DocumentoVisible = z.object({
   propietario: z.string().nullable().default(null),
   vigente_hasta: z.string().nullable().default(null),
   version: z.number().default(1),
+  tipo: TipoDocumento.default("pdf"),
 });
 export type DocumentoVisible = z.infer<typeof DocumentoVisible>;
 
@@ -46,6 +72,8 @@ export type Cita = {
   fuente: string;
   fecha: string | null;
   pagina: number;
+  /** Formato del documento; las citas guardadas antes de 0030 no lo traen y son de PDF. */
+  tipo?: TipoDocumento;
   extracto: string;
 };
 
@@ -65,7 +93,7 @@ export function esRelevante(e: Encontrado, umbralSimilitud = 0.5) {
 export function aCita(e: Encontrado, id: string, largo = 600): Cita {
   const t = e.texto.replace(/\s+/g, " ").trim();
   return {
-    id, documentoId: e.documento_id, titulo: e.titulo, fuente: e.fuente, fecha: e.fecha_documento, pagina: e.pagina,
+    id, documentoId: e.documento_id, titulo: e.titulo, fuente: e.fuente, fecha: e.fecha_documento, pagina: e.pagina, tipo: e.tipo,
     extracto: t.length > largo ? `${t.slice(0, largo).replace(/\s+\S*$/, "")}…` : t,
   };
 }

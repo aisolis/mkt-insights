@@ -10,6 +10,7 @@ import type {
   TopFila, TopRequest, VariacionFila, VariacionRequest, VersionVigente,
 } from "@/lib/semantic/contracts";
 import type { z } from "zod";
+import type { TerminoGlosario } from "./glosario";
 
 /** Las funciones del contrato semántico. En la app es src/lib/semantic/queries; en los tests, un cliente directo o un doble. */
 export type Fuente = {
@@ -37,10 +38,11 @@ export type Memoria = { periodo?: Periodo; comparado?: Periodo; filtros?: Filtro
 /**
  * `documentos`: búsqueda en el conocimiento autorizado (G6); sin ella el asistente responde solo con el cubo.
  * `reglas`: reglas activas del asistente (G8). `memoria`: última consulta de la conversación (G8).
+ * `glosario`: solo los términos del glosario que aparecen en la pregunta (ya elegidos; ver glosario.ts).
  */
 export type Contexto = {
   fuente: Fuente; version: VersionVigente; estado: EstadoDashboard; documentos?: Buscador;
-  reglas?: ReglaAsistente[]; memoria?: Memoria;
+  reglas?: ReglaAsistente[]; memoria?: Memoria; glosario?: TerminoGlosario[];
 };
 
 export type Visual =

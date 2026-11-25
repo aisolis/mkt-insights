@@ -5,7 +5,7 @@ import { CanalChart } from "@/components/dashboard/canal-chart";
 import { SerieChart } from "@/components/dashboard/serie-chart";
 import type { ConversacionResumen, TurnoGuardado, Valoracion } from "@/lib/asistente/conversaciones";
 import type { Respuesta, Visual } from "@/lib/asistente/tipos";
-import type { Cita } from "@/lib/conocimiento/tipos";
+import { TIPOS, type Cita } from "@/lib/conocimiento/tipos";
 import { fechaCorta, lempiras, mesNombre, capital } from "@/lib/format";
 import {
   Destello, FlechaArriba, IconoAlerta, IconoCaja, IconoCodigo, IconoDocumento, IconoEscudo, IconoGrafico, IconoMapa,
@@ -556,11 +556,12 @@ function ContextoDocumentos({ citas }: { citas: Cita[] }) {
           <li key={c.id} className="space-y-1">
             <div className="font-medium text-neutral-900">
               [{c.id}] {c.titulo}
-              <span className="font-normal text-neutral-600"> · {c.fuente}{c.fecha && ` · ${fechaCorta(c.fecha)}`} · pág. {c.pagina}</span>
+              <span className="font-normal text-neutral-600"> · {c.fuente}{c.fecha && ` · ${fechaCorta(c.fecha)}`} · {TIPOS[c.tipo ?? "pdf"].abrev} {c.pagina}</span>
             </div>
             <blockquote className="border-l-2 border-sky-300 pl-2 text-neutral-700">{c.extracto}</blockquote>
-            <a href={`/api/conocimiento/${c.documentoId}#page=${c.pagina}`} target="_blank" rel="noopener" className="text-sky-800 underline-offset-4 hover:underline">
-              Abrir PDF en la página {c.pagina}
+            {/* Solo un PDF se abre en el navegador en la página citada; los demás formatos se descargan. */}
+            <a href={`/api/conocimiento/${c.documentoId}${(c.tipo ?? "pdf") === "pdf" ? `#page=${c.pagina}` : ""}`} target="_blank" rel="noopener" className="text-sky-800 underline-offset-4 hover:underline">
+              {(c.tipo ?? "pdf") === "pdf" ? `Abrir PDF en la página ${c.pagina}` : `Descargar el archivo de ${TIPOS[c.tipo ?? "pdf"].nombre} (${TIPOS[c.tipo ?? "pdf"].unidad} ${c.pagina})`}
             </a>
           </li>
         ))}

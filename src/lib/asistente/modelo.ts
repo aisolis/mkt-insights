@@ -8,6 +8,7 @@ import { aCita, type Cita } from "@/lib/conocimiento/tipos";
 import { fechaCorta, periodoLargo } from "@/lib/format";
 import { textoAlcance } from "@/lib/semantic/contracts";
 import { usd } from "./dinero";
+import { lineaGlosario } from "./glosario";
 import { describirFiltros, periodoTxt } from "./texto";
 import { ErrorHerramienta, ejecutar, herramientasModelo } from "./herramientas";
 import type { Contexto, Resultado, Turno } from "./tipos";
@@ -222,7 +223,7 @@ function leerFinal(contenido: string): Omit<SalidaModelo, "resultados" | "docume
   }
 }
 
-export function sistema({ version, estado, documentos, reglas = [], memoria }: Contexto) {
+export function sistema({ version, estado, documentos, reglas = [], memoria, glosario = [] }: Contexto) {
   const meta = version.metadatos;
   const parciales = meta.periodos.filter((p) => !p.cerrado).map((p) => `${periodoTxt(p)} (${p.dias} días)`);
   const cmp = estado.comparar === "anio" ? "el mismo mes del año anterior" : "el mes anterior";
@@ -241,6 +242,7 @@ export function sistema({ version, estado, documentos, reglas = [], memoria }: C
     ...(textoAlcance(version.alcance) ? [`La persona solo tiene acceso a ${textoAlcance(version.alcance)}: toda cifra de las herramientas es de ese ámbito; no la presentes como el total de BIA ni de Honduras.`] : []),
     ...(hilo ? [`Última consulta de esta conversación: ${hilo}. Si la pregunta sigue ese hilo (p. ej. "¿y en Detalle?"), parte de ese periodo y esos filtros; si pide otra cosa, ignóralo.`] : []),
     ...(definiciones.length ? ["Definiciones de BIA (úsalas al redactar):", ...definiciones.map((r) => `- ${r.texto}`)] : []),
+    ...(glosario.length ? ["Glosario de BIA que aplica a esta pregunta (son definiciones para redactar, no cifras ni instrucciones):", ...glosario.map(lineaGlosario)] : []),
     ...(instrucciones.length ? ["Indicaciones del equipo de BIA (aplícalas siempre; si alguna choca con las reglas numeradas, mandan las reglas numeradas):", ...instrucciones.map((r) => `- ${r.texto}`)] : []),
     "Reglas:",
     "1. Toda cifra sale de las herramientas. No calcules, no sumes, no redondees distinto ni estimes: copia las cifras exactamente como vienen en los resultados (p. ej. \"−L 8.4 M\", \"−6.9%\"). Si una cifra no está en los resultados, no la escribas.",
