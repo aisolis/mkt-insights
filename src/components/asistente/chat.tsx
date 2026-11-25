@@ -558,7 +558,8 @@ export function RespuestaVista({ r }: { r: Respuesta }) {
 
       {(r.hechos.length > 0 || r.hipotesis.length > 0) && (
         <div className="grid gap-3 md:grid-cols-2">
-          <Lista titulo="Hechos comprobados" items={r.hechos} punto="bg-emerald-500" />
+          <Lista titulo="Hechos comprobados" items={r.hechos} punto="bg-emerald-500"
+            vacio={r.adjuntos?.length ? "Esta respuesta no consultó los datos de venta: sale de tus adjuntos." : "Esta respuesta no consultó los datos de venta."} />
           <Lista titulo="Hipótesis a validar" items={r.hipotesis} punto="bg-amber-500" vacio="Sin hipótesis: la pregunta se responde con los datos." />
         </div>
       )}
