@@ -22,12 +22,26 @@ export const FilaPresupuesto = z.object({
 });
 export type FilaPresupuesto = z.infer<typeof FilaPresupuesto>;
 
+/**
+ * Cómo se resolvió la última solicitud de ampliación de la persona este mes, para decírselo en el chat junto con
+ * la nota que escribió quien la resolvió. No lleva quién fue: es un mensaje para la persona, no la auditoría.
+ */
+export type Resolucion = { id: number; estado: "aprobada" | "rechazada"; montoUsd: number | null; nota: string | null; resueltaEn: string };
+
 /** Lo que el chat necesita saber del presupuesto de quien pregunta. Sin límite: `limiteUsd` nulo y nunca agotado. */
 export type EstadoPresupuesto = {
   limiteUsd: number | null; gastoUsd: number; restanteUsd: number | null; agotado: boolean;
   /** Hay una solicitud de ampliación esperando respuesta este mes. */
   pendiente: boolean;
+  /** La última solicitud resuelta de este mes, si hubo. */
+  resolucion?: Resolucion | null;
 };
+
+/** «Te aprobaron US$ 5.00 más para este mes.» / «No se aprobó tu solicitud de ampliación.», con la nota si la hay. */
+export function textoResolucion(r: Resolucion): string {
+  const base = r.estado === "aprobada" ? `Te aprobaron ${usd(r.montoUsd ?? 0)} más de presupuesto de IA para este mes.` : "No se aprobó tu solicitud de ampliación de presupuesto de IA.";
+  return r.nota ? `${base} Nota de quien la revisó: «${r.nota}»` : base;
+}
 
 export function estadoPresupuesto(f: Pick<FilaPresupuesto, "limite_usd" | "gasto_usd" | "pendiente">): EstadoPresupuesto {
   const limite = f.limite_usd;

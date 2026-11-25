@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { createServiceClient } from "@/lib/supabase/server";
-import { estadoPresupuesto, FilaPresupuesto, MAX_MOTIVO, SIN_LIMITE, type EstadoPresupuesto, type Solicitud } from "./presupuesto";
+import { estadoPresupuesto, FilaPresupuesto, MAX_MOTIVO, SIN_LIMITE, type EstadoPresupuesto, type Resolucion, type Solicitud } from "./presupuesto";
 
 /**
  * Presupuesto de IA por persona (0032_presupuesto_ia_usuario.sql). Las tablas no tienen acceso para
@@ -22,11 +22,28 @@ export async function presupuestoDe(usuarioId: string): Promise<EstadoPresupuest
     const { data, error } = await svc().rpc("presupuestos_ia", { p_usuario: usuarioId });
     if (error) throw error;
     const fila = z.array(FilaPresupuesto).parse(data)[0];
-    return fila ? estadoPresupuesto(fila) : SIN_LIMITE;
+    if (!fila) return SIN_LIMITE;
+    return { ...estadoPresupuesto(fila), resolucion: await ultimaResolucion(usuarioId, fila.mes) };
   } catch (e) {
     console.error("asistente: no se pudo leer el presupuesto de la persona", e);
     return SIN_LIMITE;
   }
+}
+
+/**
+ * La última solicitud resuelta de la persona en el mes, con la nota de quien la resolvió, para mostrársela en el
+ * chat. Si no se puede leer, el presupuesto sigue funcionando sin ese aviso.
+ */
+async function ultimaResolucion(usuarioId: string, mes: string): Promise<Resolucion | null> {
+  const { data, error } = await svc().from("ampliacion_ia").select("id, estado, monto_usd, respuesta, resuelta_en")
+    .eq("usuario_id", usuarioId).eq("mes", mes).neq("estado", "pendiente").not("resuelta_en", "is", null)
+    .order("resuelta_en", { ascending: false }).limit(1)
+    .maybeSingle<{ id: number; estado: Resolucion["estado"]; monto_usd: number | string | null; respuesta: string | null; resuelta_en: string }>();
+  if (error) {
+    console.error("asistente: no se pudo leer la última solicitud de ampliación", error.message);
+    return null;
+  }
+  return data && { id: data.id, estado: data.estado, montoUsd: data.monto_usd === null ? null : Number(data.monto_usd), nota: data.respuesta, resueltaEn: data.resuelta_en };
 }
 
 /** La persona pide una ampliación para este mes. Solo tiene sentido con el presupuesto agotado y sin otra pendiente. */

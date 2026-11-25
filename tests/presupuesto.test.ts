@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Decision } from "@/lib/asistente/modelo";
-import { conPresupuesto, estadoPresupuesto, FilaPresupuesto, leerMonto, SIN_LIMITE } from "@/lib/asistente/presupuesto";
+import { conPresupuesto, estadoPresupuesto, FilaPresupuesto, leerMonto, SIN_LIMITE, textoResolucion } from "@/lib/asistente/presupuesto";
 
 describe("estado del presupuesto", () => {
   it("agotado cuando lo gastado alcanza el límite; sin límite nunca se agota", () => {
@@ -22,6 +22,17 @@ describe("estado del presupuesto", () => {
     expect(leerMonto("$0.129")).toBe(0.13);
     expect(leerMonto("")).toBeNull();
     for (const malo of ["0", "-3", "cinco", "1.2.3"]) expect(leerMonto(malo), malo).toBeNaN();
+  });
+});
+
+describe("aviso de cómo se resolvió una solicitud", () => {
+  const r = { id: 7, resueltaEn: "2026-11-20T15:00:00Z" };
+  it("dice el monto aprobado o que no se aprobó, y agrega la nota solo si la hay", () => {
+    expect(textoResolucion({ ...r, estado: "aprobada", montoUsd: 5, nota: null })).toMatch(/^Te aprobaron US\$\s?5[.,]00 más de presupuesto de IA para este mes\.$/);
+    expect(textoResolucion({ ...r, estado: "aprobada", montoUsd: 5, nota: "Para el cierre." })).toMatch(/para este mes\. Nota de quien la revisó: «Para el cierre\.»$/);
+    expect(textoResolucion({ ...r, estado: "rechazada", montoUsd: null, nota: null })).toBe("No se aprobó tu solicitud de ampliación de presupuesto de IA.");
+    expect(textoResolucion({ ...r, estado: "rechazada", montoUsd: null, nota: "Espera al próximo mes." }))
+      .toBe("No se aprobó tu solicitud de ampliación de presupuesto de IA. Nota de quien la revisó: «Espera al próximo mes.»");
   });
 });
 

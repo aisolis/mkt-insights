@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CanalChart } from "@/components/dashboard/canal-chart";
 import { SerieChart } from "@/components/dashboard/serie-chart";
 import {
@@ -9,7 +9,7 @@ import {
 } from "@/lib/asistente/adjuntos";
 import type { ConversacionResumen, TurnoGuardado, Valoracion } from "@/lib/asistente/conversaciones";
 import { usd } from "@/lib/asistente/dinero";
-import type { EstadoPresupuesto } from "@/lib/asistente/presupuesto";
+import { textoResolucion, type EstadoPresupuesto, type Resolucion } from "@/lib/asistente/presupuesto";
 import { createClient } from "@/lib/supabase/client";
 import type { Respuesta, Visual } from "@/lib/asistente/tipos";
 import { TIPOS, type Cita } from "@/lib/conocimiento/tipos";
@@ -300,7 +300,13 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
     </p>
   );
   // Solo si es el presupuesto de la persona lo que dejó la pregunta sin IA (con la IA apagada o el tope global no aplica).
-  const avisoPresupuesto = conIa && presupuesto.agotado ? <div className="mb-2"><SinPresupuesto presupuesto={presupuesto} onCambio={setPresupuesto} /></div> : null;
+  // Arriba, cómo se resolvió su última solicitud (con la nota de quien la revisó), salvo que ya haya otra en espera.
+  const avisoPresupuesto = (
+    <>
+      {presupuesto.resolucion && !presupuesto.pendiente && <div className="mb-2"><ResolucionAmpliacion r={presupuesto.resolucion} /></div>}
+      {conIa && presupuesto.agotado && <div className="mb-2"><SinPresupuesto presupuesto={presupuesto} onCambio={setPresupuesto} /></div>}
+    </>
+  );
   const cajaAdjuntos = { texto: borrador, setTexto: setBorrador, adjuntos, subiendo, aviso: avisoAdjunto, onAdjuntar: (f: File) => void adjuntar(f), onQuitar: (a: AdjuntoVista) => void quitarAdjunto(a) };
   const panel = (
     <PanelConversaciones conversaciones={lista} activa={activa?.id ?? null} ocupado={enviando}
@@ -513,6 +519,45 @@ function Caja({ grande, onPreguntar, enviando, chip, texto, setTexto, adjuntos, 
 
 /** Queda la quinta parte o menos del presupuesto del mes: se avisa antes de que se acabe. */
 const pocoPresupuesto = (p: EstadoPresupuesto) => p.limiteUsd !== null && p.restanteUsd !== null && p.restanteUsd <= p.limiteUsd * 0.2;
+
+const CLAVE_RESOLUCION = "bia:ampliacion-vista";
+const oyentesResolucion = new Set<() => void>();
+/** Id de la última resolución que la persona ya cerró en este navegador (null si ninguna o sin almacenamiento). */
+function resolucionVista(): string | null {
+  try {
+    return window.localStorage.getItem(CLAVE_RESOLUCION);
+  } catch {
+    return null;
+  }
+}
+function suscribirResolucion(avisar: () => void) {
+  oyentesResolucion.add(avisar);
+  window.addEventListener("storage", avisar);
+  return () => { oyentesResolucion.delete(avisar); window.removeEventListener("storage", avisar); };
+}
+
+/**
+ * Cómo se resolvió la última solicitud de ampliación de la persona, con la nota de quien la revisó. Se queda hasta
+ * que la cierra (se recuerda en el navegador): es la única forma en que se entera de la respuesta.
+ */
+function ResolucionAmpliacion({ r }: { r: Resolucion }) {
+  // En el servidor no se sabe si ya la cerró: se pinta después de leer el navegador, para no mostrarla y quitarla.
+  const vista = useSyncExternalStore(suscribirResolucion, resolucionVista, () => String(r.id));
+  if (vista === String(r.id)) return null;
+  const aprobada = r.estado === "aprobada";
+  const cerrar = () => {
+    try { window.localStorage.setItem(CLAVE_RESOLUCION, String(r.id)); } catch { /* sin almacenamiento: se cierra solo en esta vista */ }
+    oyentesResolucion.forEach((f) => f());
+  };
+  return (
+    <div role="status" className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-xs ${aprobada ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-neutral-200 bg-neutral-100 text-neutral-800"}`}>
+      <p className="min-w-0">{textoResolucion(r)}</p>
+      <button type="button" onClick={cerrar} aria-label="Cerrar este aviso" className="grid size-5 shrink-0 place-items-center rounded-full hover:bg-black/10">
+        <IconoCerrar className="size-3" />
+      </button>
+    </div>
+  );
+}
 
 /**
  * Aviso de presupuesto de IA agotado, con la solicitud de ampliación: la persona explica para qué la necesita (opcional)
