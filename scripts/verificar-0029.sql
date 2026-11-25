@@ -77,6 +77,13 @@ select
   (select count(*) from (select * from hm except all select * from rm) x) mensual_falta_en_resumen,
   (select count(*) from (select * from rm except all select * from hm) x) mensual_sobra_en_resumen;
 
+-- 2c. Total por cliente (resumen_cliente_total) contra hecho, toda carga. Esperado: 0 y 0.
+with h as (select carga_id, anio, mes, empresa, cliente_codigo, sum(venta_neta) vn, max(fecha) filter (where venta_neta > 0) u
+           from ventas.hecho group by 1, 2, 3, 4, 5),
+t as (select carga_id, anio, mes, empresa, cliente_codigo, venta_neta vn, ultima_venta u from ventas.resumen_cliente_total)
+select (select count(*) from (select * from h except all select * from t) a) total_falta_en_resumen,
+       (select count(*) from (select * from t except all select * from h) b) total_sobra_en_resumen;
+
 -- 3. Paridad nuevo contra _v1 -----------------------------------------------------------------------------------------
 drop table if exists pg_temp.paridad_0029;
 create temp table paridad_0029 (

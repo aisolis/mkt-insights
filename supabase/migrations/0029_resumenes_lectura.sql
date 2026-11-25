@@ -36,7 +36,19 @@
 -- Ámbito: las dos tablas llevan empresa, canal y ruta y la misma política que hecho para lector_ventas; filtrar filas
 -- del resumen por esas columnas es lo mismo que filtrar las líneas y después sumar.
 --
--- Sin medir todavía (no hay base local): correr scripts/verificar-0029.sql en una copia antes de producción.
+-- 5. ventas.resumen_cliente_total: una fila por carga × mes × cliente (venta del mes y última fecha con venta). Cuando la
+--    lectura no depende de canal, ruta, marca ni producto (ni por filtro ni por ámbito: interno._sin_dimension), los
+--    clientes con compra y la historia de cada cliente salen de ahí. Venta, kg y rutas del KPI y del acumulado salen
+--    del resumen mensual. Solo lo ve quien no tiene ámbito de canal ni de ruta (política propia).
+--
+-- Medido en local (Docker) con datos sintéticos de forma parecida a la real: 60 meses, 3.37 M de líneas, ~56 mil
+-- líneas y ~18.7 mil clientes por mes; rol lector_ventas, sin filtros, segunda corrida, anterior → nuevo:
+--   kpi_periodo 249 → 36 ms · variacion_por_dimension 49 → 9 ms · top_contribuyentes 197 → 11 ms ·
+--   puente 61 → 14 ms · acumulado_anio 573 → 248 ms · _clientes_estado 4 190 → 481 ms.
+--   Con filtro de ruta el acumulado pasa de 11 a 27 ms (hecho tiene índice por ruta sobre menos columnas; se acepta).
+-- Paridad contra la implementación anterior (interno.*_v1): scripts/verificar-0029.sql, y con ámbito por persona
+-- scripts/verificar-0029-ambito.sql (5 perfiles, 810 comparaciones, 0 diferencias). Aplicarla sobre 3.37 M de líneas
+-- ya cargadas tardó 45 s en una transacción. Falta medirla con datos reales: correr los dos scripts en una copia.
 
 -- 1. Resumen por cliente -----------------------------------------------------------------------------------------
 create table if not exists ventas.resumen_cliente_mes (
@@ -64,6 +76,49 @@ create policy "lector: resumen por cliente en su ámbito" on ventas.resumen_clie
   )
 );
 
+-- Índices como los de hecho: un filtro de ruta o de canal no recorre el mes entero.
+create index if not exists resumen_cliente_mes_ruta on ventas.resumen_cliente_mes (anio, mes, ruta);
+create index if not exists resumen_cliente_mes_canal on ventas.resumen_cliente_mes (anio, mes, canal);
+
+-- 1b. Total por cliente y mes (sin canal, ruta ni marca) -----------------------------------------------------------
+-- Una fila por carga × mes × cliente: su venta neta del mes y su última fecha con venta. Es lo que necesitan
+-- "clientes con compra" y la historia de cada cliente ("¿compró antes?", última compra) cuando la lectura no depende de
+-- canal, ruta, marca ni producto: la vista sin filtros, que es la de entrada. Con cualquiera de esos filtros, o si quien
+-- consulta tiene ámbito de canal o ruta, la venta del cliente ya no es su total y se lee resumen_cliente_mes.
+create table if not exists ventas.resumen_cliente_total (
+  carga_id uuid not null references ventas.carga(id) on delete cascade,
+  anio smallint not null, mes smallint not null,
+  empresa text not null, cliente_codigo text not null,
+  venta_neta numeric(16,2) not null,
+  ultima_venta date,  -- última fecha con una línea de venta neta > 0 (null si ninguna)
+  primary key (carga_id, anio, mes, empresa, cliente_codigo)
+);
+comment on table ventas.resumen_cliente_total is 'Venta total por carga, mes y cliente (empresa + código). Se llena con ventas._llenar_resumen; lo leen kpi_periodo, acumulado_anio y clientes cuando no hay filtro ni ámbito de canal, ruta, marca o producto.';
+
+-- El total de un cliente mezcla sus canales y rutas: solo lo ve quien no tiene ámbito de canal ni de ruta (y, si tiene
+-- ámbito de empresa, solo esas empresas). Las funciones deciden con interno._sin_dimension, que usa la misma regla.
+alter table ventas.resumen_cliente_total enable row level security;
+revoke all on ventas.resumen_cliente_total from public, anon, authenticated;
+grant all on ventas.resumen_cliente_total to service_role;
+grant select on ventas.resumen_cliente_total to lector_ventas;
+drop policy if exists "lector: total por cliente sin ámbito de canal ni ruta" on ventas.resumen_cliente_total;
+create policy "lector: total por cliente sin ámbito de canal ni ruta" on ventas.resumen_cliente_total for select to lector_ventas using (
+  (select interno.alcance_sesion()) is null or (
+        (select interno.alcance_lista('canal')) is null
+    and (select interno.alcance_lista('ruta')) is null
+    and ((select interno.alcance_lista('empresa')) is null or empresa = any((select interno.alcance_lista('empresa'))::text[]))
+  )
+);
+
+/** ¿La lectura no depende de canal, ruta, marca ni producto, ni por filtro ni por el ámbito de quien consulta? */
+create or replace function interno._sin_dimension(p_filtros jsonb) returns boolean
+language sql stable parallel safe set search_path = '' as $$
+  select p_filtros->>'canal' is null and p_filtros->>'ruta' is null and p_filtros->>'marca' is null and p_filtros->>'art_codigo' is null
+     and interno.alcance_lista('canal') is null and interno.alcance_lista('ruta') is null
+$$;
+revoke execute on function interno._sin_dimension(jsonb) from public, anon, authenticated;
+grant execute on function interno._sin_dimension(jsonb) to lector_ventas, service_role;
+
 -- 2. Descripción en el resumen mensual (min del grano: el min de los min es el min de las líneas) ------------------
 alter table ventas.resumen_mensual add column if not exists art_descrip text;
 
@@ -76,6 +131,13 @@ begin
          count(*), sum(h.venta_neta), sum(h.kg), max(h.fecha) filter (where h.venta_neta > 0)
   from ventas.hecho h where h.carga_id = p_carga
   group by h.carga_id, h.anio, h.mes, h.empresa, h.cliente_codigo, h.canal, h.ruta, h.marca;
+
+  -- El total por cliente sale del resumen recién hecho (la suma de sumas y el max de max son los de las líneas).
+  delete from ventas.resumen_cliente_total where carga_id = p_carga;
+  insert into ventas.resumen_cliente_total (carga_id, anio, mes, empresa, cliente_codigo, venta_neta, ultima_venta)
+  select r.carga_id, r.anio, r.mes, r.empresa, r.cliente_codigo, sum(r.venta_neta), max(r.ultima_venta)
+  from ventas.resumen_cliente_mes r where r.carga_id = p_carga
+  group by r.carga_id, r.anio, r.mes, r.empresa, r.cliente_codigo;
 end $$;
 
 -- Igual que en 0003 (mismas columnas y grano) más art_descrip y el resumen por cliente.
@@ -109,6 +171,7 @@ where exists (select 1 from ventas.hecho h where h.carga_id = c.id)
   and not exists (select 1 from ventas.resumen_cliente_mes r where r.carga_id = c.id);
 
 analyze ventas.resumen_cliente_mes;
+analyze ventas.resumen_cliente_total;
 analyze ventas.resumen_mensual;
 
 -- 4. La implementación anterior queda como <nombre>_v1 (renombrada: mismo cuerpo, opciones, dueño y permisos) --------
@@ -135,20 +198,51 @@ end $$;
 -- En todas: la composición de la versión (version_mes) se restringe también a los meses pedidos, para que el índice
 -- (carga_id, anio, mes, …) de cada resumen se recorra solo en esos meses. Los filtros son los de ventas._where_filtros.
 
--- KPI del periodo (0003/0008). Sumas, rutas con movimiento y clientes con venta sumada > 0 (S4) salen igual del
--- resumen por cliente: sus filas existen si y solo si hay líneas con esa combinación.
+-- KPI del periodo (0003/0008). Venta, kg y rutas con movimiento salen del resumen mensual (sus filas existen si y
+-- solo si hay líneas con esa combinación). Clientes con compra (S4: venta neta SUMADA del cliente > 0): del total por
+-- cliente si la lectura no depende de canal, ruta ni marca; si no, sumando el resumen por cliente con esos filtros.
 create or replace function interno.kpi_periodo(
   p_version int, p_anio int, p_mes int, p_anio_cmp int, p_mes_cmp int, p_filtros jsonb default '{}'
-) returns jsonb language plpgsql stable set plan_cache_mode = force_custom_plan as $$
+) returns jsonb language plpgsql stable set work_mem = '32MB' set plan_cache_mode = force_custom_plan as $$
+declare
+  v_tot jsonb; v_a bigint; v_c bigint;
 begin
   if p_filtros->>'art_codigo' is not null then
     return interno.kpi_periodo_v1(p_version, p_anio, p_mes, p_anio_cmp, p_mes_cmp, p_filtros);
   end if;
+
+  -- Clientes con compra (S4: venta neta SUMADA del cliente en el periodo > 0).
+  if interno._sin_dimension(p_filtros) then
+    select count(*) filter (where r.anio = p_anio and r.mes = p_mes),
+           count(*) filter (where not (r.anio = p_anio and r.mes = p_mes))
+    into v_a, v_c
+    from ventas.resumen_cliente_total r
+    join ventas.version_mes vm on vm.carga_id = r.carga_id and vm.anio = r.anio and vm.mes = r.mes and vm.version = p_version
+    where ((vm.anio = p_anio and vm.mes = p_mes) or (vm.anio = p_anio_cmp and vm.mes = p_mes_cmp))
+      and ((r.anio = p_anio and r.mes = p_mes) or (r.anio = p_anio_cmp and r.mes = p_mes_cmp))
+      and (p_filtros->>'empresa' is null or r.empresa = p_filtros->>'empresa')
+      and r.venta_neta > 0;
+  else
+    select count(*) filter (where es_actual), count(*) filter (where not es_actual) into v_a, v_c
+    from (
+      select (r.anio = p_anio and r.mes = p_mes) es_actual
+      from ventas.resumen_cliente_mes r
+      join ventas.version_mes vm on vm.carga_id = r.carga_id and vm.anio = r.anio and vm.mes = r.mes and vm.version = p_version
+      where ((vm.anio = p_anio and vm.mes = p_mes) or (vm.anio = p_anio_cmp and vm.mes = p_mes_cmp))
+        and ((r.anio = p_anio and r.mes = p_mes) or (r.anio = p_anio_cmp and r.mes = p_mes_cmp))
+        and (p_filtros->>'empresa' is null or r.empresa = p_filtros->>'empresa')
+        and (p_filtros->>'canal'   is null or r.canal   = p_filtros->>'canal')
+        and (p_filtros->>'ruta'    is null or r.ruta    = p_filtros->>'ruta')
+        and (p_filtros->>'marca'   is null or r.marca   = p_filtros->>'marca')
+      group by 1, r.empresa, r.cliente_codigo having sum(r.venta_neta) > 0
+    ) s;
+  end if;
+
   return (
-  with base as (
-    select r.empresa, r.cliente_codigo, r.ruta, r.venta_neta, r.kg,
-           (r.anio = p_anio and r.mes = p_mes) es_actual
-    from ventas.resumen_cliente_mes r
+  with tot as (
+    select (r.anio = p_anio and r.mes = p_mes) es_actual,
+           coalesce(sum(r.venta_neta), 0) vn, coalesce(sum(r.kg), 0) kg, count(distinct r.ruta) rutas
+    from ventas.resumen_mensual r
     join ventas.version_mes vm on vm.carga_id = r.carga_id and vm.anio = r.anio and vm.mes = r.mes and vm.version = p_version
     where ((vm.anio = p_anio and vm.mes = p_mes) or (vm.anio = p_anio_cmp and vm.mes = p_mes_cmp))
       and ((r.anio = p_anio and r.mes = p_mes) or (r.anio = p_anio_cmp and r.mes = p_mes_cmp))
@@ -156,20 +250,12 @@ begin
       and (p_filtros->>'canal'   is null or r.canal   = p_filtros->>'canal')
       and (p_filtros->>'ruta'    is null or r.ruta    = p_filtros->>'ruta')
       and (p_filtros->>'marca'   is null or r.marca   = p_filtros->>'marca')
+    group by 1
   ),
-  tot as (
-    select es_actual, coalesce(sum(venta_neta), 0) vn, coalesce(sum(kg), 0) kg, count(distinct ruta) rutas
-    from base group by es_actual
-  ),
-  cli as (
-    select es_actual, count(*) cl from (
-      select es_actual from base group by es_actual, empresa, cliente_codigo having sum(venta_neta) > 0
-    ) s group by es_actual
-  ),
-  a as (select coalesce(t.vn, 0) vn, coalesce(t.kg, 0) kg, coalesce(t.rutas, 0) rutas, coalesce(c.cl, 0) cl
-        from (select true k) x left join tot t on t.es_actual left join cli c on c.es_actual),
-  c as (select coalesce(t.vn, 0) vn, coalesce(t.kg, 0) kg, coalesce(c.cl, 0) cl
-        from (select false k) x left join tot t on not t.es_actual left join cli c on not c.es_actual)
+  a as (select coalesce(t.vn, 0) vn, coalesce(t.kg, 0) kg, coalesce(t.rutas, 0) rutas, coalesce(v_a, 0) cl
+        from (select true k) x left join tot t on t.es_actual),
+  c as (select coalesce(t.vn, 0) vn, coalesce(t.kg, 0) kg, coalesce(v_c, 0) cl
+        from (select false k) x left join tot t on not t.es_actual)
   select jsonb_build_object(
     'venta_neta', a.vn, 'kg', a.kg, 'precio_kg', case when a.kg <> 0 then round(a.vn / a.kg, 2) end, 'clientes_con_compra', a.cl,
     'venta_neta_cmp', c.vn, 'kg_cmp', c.kg, 'precio_kg_cmp', case when c.kg <> 0 then round(c.vn / c.kg, 2) end, 'clientes_con_compra_cmp', c.cl,
@@ -317,17 +403,50 @@ begin
   from e);
 end $$;
 
--- Acumulado del año (0014, S24). Clientes con compra sobre la venta SUMADA del tramo: se suma el resumen por cliente.
+-- Acumulado del año (0014, S24). Venta y kg del resumen mensual; clientes con compra sobre la venta SUMADA del tramo,
+-- del total por cliente o del resumen por cliente según interno._sin_dimension. enable_sort/enable_nestloop = off:
+-- agrupar por cliente en memoria y unir por hash (medido: el plan con sort por texto tarda el triple).
 create or replace function interno.acumulado_anio(p_version int, p_anio int, p_mes int, p_filtros jsonb default '{}')
-returns jsonb language plpgsql stable set work_mem = '32MB' set plan_cache_mode = force_custom_plan as $$
+returns jsonb language plpgsql stable set work_mem = '64MB' set plan_cache_mode = force_custom_plan
+set enable_sort = off set enable_nestloop = off as $$
+declare
+  v_a bigint; v_c bigint;
 begin
   if p_filtros->>'art_codigo' is not null then
     return interno.acumulado_anio_v1(p_version, p_anio, p_mes, p_filtros);
   end if;
+
+  if interno._sin_dimension(p_filtros) then
+    select count(*) filter (where es_actual), count(*) filter (where not es_actual) into v_a, v_c
+    from (
+      select r.anio = p_anio es_actual
+      from ventas.resumen_cliente_total r
+      join ventas.version_mes vm on vm.carga_id = r.carga_id and vm.anio = r.anio and vm.mes = r.mes and vm.version = p_version
+      where vm.anio in (p_anio, p_anio - 1) and vm.mes between 1 and p_mes
+        and r.anio in (p_anio, p_anio - 1) and r.mes between 1 and p_mes
+        and (p_filtros->>'empresa' is null or r.empresa = p_filtros->>'empresa')
+      group by 1, r.empresa, r.cliente_codigo having sum(r.venta_neta) > 0
+    ) s;
+  else
+    select count(*) filter (where es_actual), count(*) filter (where not es_actual) into v_a, v_c
+    from (
+      select r.anio = p_anio es_actual
+      from ventas.resumen_cliente_mes r
+      join ventas.version_mes vm on vm.carga_id = r.carga_id and vm.anio = r.anio and vm.mes = r.mes and vm.version = p_version
+      where vm.anio in (p_anio, p_anio - 1) and vm.mes between 1 and p_mes
+        and r.anio in (p_anio, p_anio - 1) and r.mes between 1 and p_mes
+        and (p_filtros->>'empresa' is null or r.empresa = p_filtros->>'empresa')
+        and (p_filtros->>'canal'   is null or r.canal   = p_filtros->>'canal')
+        and (p_filtros->>'ruta'    is null or r.ruta    = p_filtros->>'ruta')
+        and (p_filtros->>'marca'   is null or r.marca   = p_filtros->>'marca')
+      group by 1, r.empresa, r.cliente_codigo having sum(r.venta_neta) > 0
+    ) s;
+  end if;
+
   return (
-  with por_cliente as (
+  with sumas as (
     select r.anio = p_anio es_actual, sum(r.venta_neta) vn, sum(r.kg) kg
-    from ventas.resumen_cliente_mes r
+    from ventas.resumen_mensual r
     join ventas.version_mes vm on vm.carga_id = r.carga_id and vm.anio = r.anio and vm.mes = r.mes and vm.version = p_version
     where vm.anio in (p_anio, p_anio - 1) and vm.mes between 1 and p_mes
       and r.anio in (p_anio, p_anio - 1) and r.mes between 1 and p_mes
@@ -335,15 +454,15 @@ begin
       and (p_filtros->>'canal'   is null or r.canal   = p_filtros->>'canal')
       and (p_filtros->>'ruta'    is null or r.ruta    = p_filtros->>'ruta')
       and (p_filtros->>'marca'   is null or r.marca   = p_filtros->>'marca')
-    group by 1, r.empresa, r.cliente_codigo
+    group by 1
   ),
-  tot as (select es_actual, sum(vn) vn, sum(kg) kg, count(*) filter (where vn > 0) n from por_cliente group by es_actual),
   lado as (
-    select x.es_actual, coalesce(t.vn, 0) vn, coalesce(t.kg, 0) kg, coalesce(t.n, 0) cl,
+    select x.es_actual, coalesce(t.vn, 0) vn, coalesce(t.kg, 0) kg,
+      case when x.es_actual then coalesce(v_a, 0) else coalesce(v_c, 0) end cl,
       (select coalesce(jsonb_agg(vm.mes order by vm.mes), '[]'::jsonb) from ventas.version_mes vm
        where vm.version = p_version and vm.anio = case when x.es_actual then p_anio else p_anio - 1 end and vm.mes between 1 and p_mes) meses
     from (values (true), (false)) x(es_actual)
-    left join tot t using (es_actual)
+    left join sumas t using (es_actual)
   ),
   a as (select * from lado where es_actual), b as (select * from lado where not es_actual)
   select jsonb_build_object(
@@ -354,30 +473,56 @@ begin
   from a, b);
 end $$;
 
--- Estados de clientes (0015, S22). Solo cambia el CTE lin: agrupa el resumen por cliente al mismo grano que antes
--- agrupaba las líneas (cliente × mes, y ruta en P y C). max(ultima_venta) = max(fecha) de las líneas con venta > 0.
--- Sin enable_sort/enable_nestloop = off (0027): eran para agrupar el millón de líneas de hecho; aquí el plan bueno es
--- justamente el nested loop composición → índice del resumen. La ruta por hecho (_v1) conserva esos ajustes.
+-- Estados de clientes (0015, S22). Los meses P y C salen del resumen por cliente (hace falta la ruta: ruta principal
+-- por venta, como antes). El resto de la historia ("¿compró antes?", última compra en un mes con compra) solo necesita
+-- la venta del cliente por mes: del total por cliente, o del resumen por cliente agrupado si hay filtro o ámbito de
+-- canal, ruta o marca. Un cliente sin venta en P ni en C no sale (como antes), así que la historia se une por la izquierda.
+-- enable_sort = off (como en 0027): agrupar la historia en memoria; ordenar por texto 1 M de filas tarda 4 veces más.
 create or replace function interno._clientes_estado(
   p_version int, p_anio int, p_mes int, p_anio_cmp int, p_mes_cmp int, p_filtros jsonb default '{}'
 ) returns table (
   empresa text, cliente_codigo text, ruta text, estado text, en_riesgo boolean,
   venta numeric, venta_cmp numeric, ultima_compra date
-) language plpgsql stable set statement_timeout = '2min' set work_mem = '64MB' as $$
+) language plpgsql stable set statement_timeout = '2min' set work_mem = '64MB' set enable_sort = off as $$
+declare
+  v_otros text;
 begin
   if p_filtros->>'art_codigo' is not null then
     return query select * from interno._clientes_estado_v1(p_version, p_anio, p_mes, p_anio_cmp, p_mes_cmp, p_filtros);
     return;
   end if;
+  if interno._sin_dimension(p_filtros) then
+    v_otros := $o$
+      select r.empresa, r.cliente_codigo, r.anio, r.mes, r.venta_neta vn, r.ultima_venta ultima
+      from ventas.resumen_cliente_total r
+      join ventas.version_mes vm on vm.carga_id = r.carga_id and vm.anio = r.anio and vm.mes = r.mes and vm.version = $1
+      where vm.anio * 100 + vm.mes <= greatest($2 * 100 + $3, $4 * 100 + $5)
+        and r.anio * 100 + r.mes <= greatest($2 * 100 + $3, $4 * 100 + $5)
+        and not (r.anio = $2 and r.mes = $3) and not (r.anio = $4 and r.mes = $5)
+        and ($6->>'empresa' is null or r.empresa = $6->>'empresa')
+    $o$;
+  else
+    v_otros := $o$
+      select r.empresa, r.cliente_codigo, r.anio, r.mes, sum(r.venta_neta) vn, max(r.ultima_venta) ultima
+      from ventas.resumen_cliente_mes r
+      join ventas.version_mes vm on vm.carga_id = r.carga_id and vm.anio = r.anio and vm.mes = r.mes and vm.version = $1
+      where vm.anio * 100 + vm.mes <= greatest($2 * 100 + $3, $4 * 100 + $5)
+        and r.anio * 100 + r.mes <= greatest($2 * 100 + $3, $4 * 100 + $5)
+        and not (r.anio = $2 and r.mes = $3) and not (r.anio = $4 and r.mes = $5)
+        and ($6->>'empresa' is null or r.empresa = $6->>'empresa')
+        and ($6->>'canal'   is null or r.canal   = $6->>'canal')
+        and ($6->>'ruta'    is null or r.ruta    = $6->>'ruta')
+        and ($6->>'marca'   is null or r.marca   = $6->>'marca')
+      group by 1, 2, 3, 4
+    $o$;
+  end if;
   return query execute $q$
-  with lin as (
-    select r.empresa, r.cliente_codigo, r.anio, r.mes,
-           case when (r.anio = $2 and r.mes = $3) or (r.anio = $4 and r.mes = $5) then r.ruta end ruta,
-           sum(r.venta_neta) vn, max(r.ultima_venta) ultima
+  with pc as (
+    select r.empresa, r.cliente_codigo, r.anio, r.mes, r.ruta, sum(r.venta_neta) vn, max(r.ultima_venta) ultima
     from ventas.resumen_cliente_mes r
     join ventas.version_mes vm on vm.carga_id = r.carga_id and vm.anio = r.anio and vm.mes = r.mes and vm.version = $1
-    where vm.anio * 100 + vm.mes <= greatest($2 * 100 + $3, $4 * 100 + $5)
-      and r.anio * 100 + r.mes <= greatest($2 * 100 + $3, $4 * 100 + $5)
+    where ((vm.anio = $2 and vm.mes = $3) or (vm.anio = $4 and vm.mes = $5))
+      and ((r.anio = $2 and r.mes = $3) or (r.anio = $4 and r.mes = $5))
       and ($6->>'empresa' is null or r.empresa = $6->>'empresa')
       and ($6->>'canal'   is null or r.canal   = $6->>'canal')
       and ($6->>'ruta'    is null or r.ruta    = $6->>'ruta')
@@ -387,7 +532,7 @@ begin
   ord as (
     select l.*, (l.anio = $2 and l.mes = $3) es_p, (l.anio = $4 and l.mes = $5) es_c,
            row_number() over (partition by l.empresa, l.cliente_codigo, l.anio, l.mes order by l.vn desc, l.ruta) rn
-    from lin l
+    from pc l
   ),
   cli as (
     select o.empresa, o.cliente_codigo,
@@ -395,24 +540,28 @@ begin
       coalesce(sum(o.vn) filter (where o.es_c), 0) venta_cmp,
       max(o.ruta) filter (where o.es_p and o.rn = 1) ruta_p,
       max(o.ruta) filter (where o.es_c and o.rn = 1) ruta_c,
-      coalesce(bool_or(o.vn > 0) filter (where not o.es_p and not o.es_c and o.anio * 100 + o.mes < $2 * 100 + $3), false) compro_antes,
-      max(o.ultima) filter (where not o.es_p and not o.es_c and o.vn > 0) ultima_otros,
       max(o.ultima) filter (where o.es_p) ultima_p,
       max(o.ultima) filter (where o.es_c) ultima_c
     from ord o group by 1, 2
   ),
+  otros as (
+    select m.empresa, m.cliente_codigo,
+      coalesce(bool_or(m.vn > 0) filter (where m.anio * 100 + m.mes < $2 * 100 + $3), false) compro_antes,
+      max(m.ultima) filter (where m.vn > 0) ultima_otros
+    from ( $q$ || v_otros || $q$ ) m group by 1, 2
+  ),
   est as (
-    select c.*, case
+    select c.*, coalesce(o.compro_antes, false) compro_antes, o.ultima_otros, case
       when c.venta > 0 and c.venta_cmp > 0 then 'continua'
-      when c.venta > 0 and c.compro_antes then 'recuperado'
+      when c.venta > 0 and coalesce(o.compro_antes, false) then 'recuperado'
       when c.venta > 0 then 'nuevo'
       else 'perdido' end estado
-    from cli c where c.venta > 0 or c.venta_cmp > 0
+    from cli c left join otros o on o.empresa = c.empresa and o.cliente_codigo = c.cliente_codigo
+    where c.venta > 0 or c.venta_cmp > 0
   )
   select e.empresa, e.cliente_codigo, case when e.venta > 0 then e.ruta_p else e.ruta_c end, e.estado,
          e.estado = 'continua' and e.venta < e.venta_cmp * (1 - interno.umbral_riesgo_clientes()),
          e.venta, e.venta_cmp,
-         -- Última compra: última línea con venta en un mes en que el cliente compró (S4), hasta el periodo más reciente.
          greatest(e.ultima_otros, case when e.venta > 0 then e.ultima_p end, case when e.venta_cmp > 0 then e.ultima_c end)
   from est e
   $q$ using p_version, p_anio, p_mes, p_anio_cmp, p_mes_cmp, p_filtros;
