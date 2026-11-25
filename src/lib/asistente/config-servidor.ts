@@ -206,7 +206,7 @@ export async function guardarConfig(entrada: EntradaConfig, usuarioId: string | 
 }
 
 /** Foto de la configuración en un cambio. tope_mensual_usd no está en los cambios anteriores a G9. */
-export type FotoConfig = { usar_ia: boolean; modelo: string | null; tope_mensual_usd?: number | null };
+export type FotoConfig = { usar_ia: boolean; modelo: string | null; tope_mensual_usd?: number | null; presupuesto_usuario_usd?: number | null };
 export type CambioConfig = { creadoEn: string; usuario: string | null; antes: FotoConfig; despues: FotoConfig };
 
 export async function cambiosConfig(limite = 10): Promise<CambioConfig[]> {

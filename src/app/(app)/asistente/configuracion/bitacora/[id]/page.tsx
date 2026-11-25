@@ -9,6 +9,7 @@ import { ESTADO_TXT, fechaHora, miles, segundos, VALORACION_TXT } from "../texto
 const MOTIVO_TXT = {
   tope_gasto: "Automática por reglas: se había llegado al tope de gasto de IA del mes",
   modelo_no_permitido: "Automática por reglas: el modelo configurado no estaba en la lista de permitidos",
+  presupuesto_usuario: "Automática por reglas: la persona había agotado su presupuesto de IA del mes",
 } as const;
 
 const TIPO_TXT = { instruccion: "Instrucción", definicion: "Definición", bloqueo: "Bloqueo" } as const;

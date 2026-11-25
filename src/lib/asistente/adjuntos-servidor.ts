@@ -8,6 +8,8 @@ import {
 } from "./adjuntos";
 import { procesarAdjunto, type ResultadoAdjunto } from "./adjuntos-proceso";
 import { modeloParaPregunta } from "./config-servidor";
+import { conPresupuesto } from "./presupuesto";
+import { presupuestoDe } from "./presupuesto-servidor";
 import { configVision } from "./vision";
 
 /**
@@ -82,10 +84,13 @@ export async function procesarAdjuntoPropio(id: string, usuarioId: string): Prom
   if (!fila) return null;
   let vision = null, sinVision: string | undefined;
   if (fila.tipo === "imagen") {
-    const decision = await modeloParaPregunta();
+    // Leer una foto gasta del presupuesto de IA de la persona, igual que una pregunta.
+    const [global, presupuesto] = await Promise.all([modeloParaPregunta(), presupuestoDe(usuarioId)]);
+    const decision = conPresupuesto(global, presupuesto);
     vision = decision.modelo ? configVision() : null;
     if (!vision) {
-      sinVision = decision.motivo === "tope_gasto" ? "Se llegó al tope de gasto de IA del mes: por ahora no se pueden leer fotos. Puedes adjuntar el contenido como PDF, Word, Excel o texto."
+      sinVision = decision.motivo === "presupuesto_usuario" ? "Se acabó tu presupuesto de IA de este mes: por ahora no se pueden leer fotos. Puedes pedir una ampliación, o adjuntar el contenido como PDF, Word, Excel o texto."
+        : decision.motivo === "tope_gasto" ? "Se llegó al tope de gasto de IA del mes: por ahora no se pueden leer fotos. Puedes adjuntar el contenido como PDF, Word, Excel o texto."
         : "Leer fotos necesita un modelo de IA con visión y ahora no hay uno disponible. Puedes adjuntar el contenido como PDF, Word, Excel o texto.";
     }
   }

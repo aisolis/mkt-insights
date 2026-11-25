@@ -88,7 +88,7 @@ export function sumarUso(uso: Uso, usage: unknown) {
 
 // Tope de gasto y lista de permitidos: qué modelo responde una pregunta (G9) ----------------------------------------
 
-export type MotivoAutomatico = "tope_gasto" | "modelo_no_permitido";
+export type MotivoAutomatico = "tope_gasto" | "modelo_no_permitido" | "presupuesto_usuario";
 export type Decision = { modelo: ConfigModelo | null; motivo: MotivoAutomatico | null; aviso: string | null };
 
 /**

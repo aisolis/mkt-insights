@@ -26,7 +26,7 @@ export const FiltroBitacora = z.object({
 export type FiltroBitacora = z.infer<typeof FiltroBitacora>;
 
 export type Valoracion = { util: boolean; comentario: string | null };
-export type MotivoAutomatico = "tope_gasto" | "modelo_no_permitido";
+export type MotivoAutomatico = "tope_gasto" | "modelo_no_permitido" | "presupuesto_usuario";
 
 export type FilaLista = {
   id: number; creado_en: string; usuario: string; usuario_id: string | null; conversacion_id: string | null; version: number | null;
