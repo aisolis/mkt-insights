@@ -122,6 +122,23 @@ Si la versión todavía no está conciliada con BI, el resumen lo dice. Concilia
 
 Ya no se marca a mano: la conciliación sale del control de BI (paso 3c). Si la versión vigente quedó sin conciliar, sube el reporte de BI en **Conciliar vN con BI**.
 
+### Por qué hace falta
+
+Foresight se carga con el Excel que exporta el cubo. Que sus cifras coincidan con ese Excel solo prueba que la carga no perdió ni cambió nada por el camino; no prueba que el Excel traiga lo mismo que BI reporta como cifra oficial. Una exportación puede salir incompleta, con otro filtro o con otro corte, y Foresight la reproduciría sin error.
+
+El reporte de BI es la única comprobación independiente: lo genera BI por su cuenta, fuera de Foresight y sin pasar por la carga. Por eso es lo único que puede dejar una versión como «conciliada con BI».
+
+Qué garantiza la marca:
+
+- **Conciliada con BI:** cada cifra del reporte de BI (venta neta y/o kg, por mes y, si BI los separa, por empresa y canal) es igual a la de Foresight, sin tolerancia, y el último mes se aprobó como completo. Queda guardado contra qué reporte, quién lo generó en BI y con qué corte.
+- **Sin conciliar con BI:** las cifras son las del Excel cargado, y nadie las ha comparado todavía contra BI o la comparación no coincidió. Se pueden consultar, pero la cabecera, el resumen del mes y cada respuesta del asistente lo advierten.
+
+Qué no garantiza: solo cubre el nivel del reporte de BI. Si BI entrega totales por mes, la marca no dice nada de cómo se reparte la venta por ruta, marca o producto.
+
+Por eso la regla de trabajo es conciliar antes de circular cifras fuera del equipo. Publicar sin conciliar está permitido, con el motivo escrito, para no frenar el trabajo mientras llega el reporte de BI.
+
+Pendiente de decidir con BIA: si la conciliación debe ser obligatoria para publicar, y la regla de precisión y el formato definitivo del reporte de BI (ver `docs/backlog.md`).
+
 ## Si algo salió mal
 
 En la versión vigente pulsa **Retirar** y escribe el motivo. Vuelve a regir la versión anterior y el retiro queda en el historial. Después sube el archivo corregido.
