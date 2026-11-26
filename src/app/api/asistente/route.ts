@@ -11,6 +11,8 @@ import { glosarioActivo } from "@/lib/asistente/glosario-servidor";
 import { reglasActivas } from "@/lib/asistente/reglas-servidor";
 import { columnasUso, modeloParaPregunta } from "@/lib/asistente/config-servidor";
 import { usoVacio } from "@/lib/asistente/modelo";
+import { conPresupuesto } from "@/lib/asistente/presupuesto";
+import { presupuestoDe } from "@/lib/asistente/presupuesto-servidor";
 import { responder } from "@/lib/asistente/responder";
 import type { Contexto } from "@/lib/asistente/tipos";
 import { buscarDocumentos } from "@/lib/conocimiento/servidor";
@@ -75,7 +77,9 @@ export async function POST(request: Request) {
 
   // El elegido en Configuración del asistente (o automático). Con el tope de gasto del mes alcanzado o un modelo
   // fuera de la lista de permitidos responde el análisis automático, con aviso y marcado en la bitácora (G9).
-  const { modelo, aviso, motivo } = await modeloParaPregunta();
+  // Después se aplica el presupuesto de IA de la persona: si ya lo agotó este mes, también responde el automático.
+  const [global, presupuesto] = await Promise.all([modeloParaPregunta(), presupuestoDe(usuario.id)]);
+  const { modelo, aviso, motivo } = conPresupuesto(global, presupuesto);
   const uso = usoVacio(); // tokens y costo de todas las rondas, también si la pregunta termina en error
   const inicio = Date.now();
   const base = {
@@ -89,7 +93,8 @@ export async function POST(request: Request) {
     try {
       const actual = await tocarConversacion(conversacion.id);
       const preguntas = await contarPreguntas(conversacion.id);
-      return { conversacionId: conversacion.id, preguntas, conversacion: { ...(actual ?? conversacion), preguntas } };
+      // El presupuesto ya con el costo de esta pregunta: el chat avisa si con ella se agotó.
+      return { conversacionId: conversacion.id, preguntas, conversacion: { ...(actual ?? conversacion), preguntas }, presupuesto: await presupuestoDe(usuario.id) };
     } catch (e) {
       console.error("asistente: no se pudo actualizar la conversación", e);
       return { conversacionId: conversacion.id };

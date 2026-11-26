@@ -20,6 +20,11 @@ function textoCambio(c: CambioConfig) {
   if ("tope_mensual_usd" in c.despues && (c.antes.tope_mensual_usd ?? null) !== (c.despues.tope_mensual_usd ?? null)) {
     partes.push(<span key="t">{partes.length ? " y " : ""}de {describirTope(c.antes.tope_mensual_usd)} a {describirTope(c.despues.tope_mensual_usd)}</span>);
   }
+  // Igual con el presupuesto por persona (0032), que se cambia en la pestaña Presupuestos.
+  if ("presupuesto_usuario_usd" in c.despues && (c.antes.presupuesto_usuario_usd ?? null) !== (c.despues.presupuesto_usuario_usd ?? null)) {
+    const p = (v: number | null | undefined) => (v === null || v === undefined ? "sin límite por persona" : `${usd(Number(v))} al mes por persona`);
+    partes.push(<span key="p">{partes.length ? " y " : ""}el presupuesto de {p(c.antes.presupuesto_usuario_usd)} a {p(c.despues.presupuesto_usuario_usd)}</span>);
+  }
   return partes.length ? partes : <span>sin cambios visibles</span>;
 }
 

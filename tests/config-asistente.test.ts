@@ -101,8 +101,10 @@ describe.skipIf(!url || !service)("configuración en la base", () => {
     expect(data).toEqual({ usar_ia: true, modelo: otro });
     const cambios = await svc.schema("ventas").from("config_asistente_cambio").select("antes, despues").gte("creado_en", desde);
     expect(cambios.data).toHaveLength(1);
-    // Desde G9 (0017) la foto del cambio también lleva el tope de gasto mensual.
-    expect(cambios.data![0].despues).toEqual({ usar_ia: true, modelo: otro, tope_mensual_usd: null });
+    // Desde G9 (0017) la foto del cambio también lleva el tope de gasto mensual y, desde 0032, el presupuesto general
+    // por persona (su valor lo cambia otra prueba mientras corre esta: solo se comprueba que viene).
+    expect(cambios.data![0].despues).toMatchObject({ usar_ia: true, modelo: otro, tope_mensual_usd: null });
+    expect(Object.keys(cambios.data![0].despues).sort()).toEqual(["modelo", "presupuesto_usuario_usd", "tope_mensual_usd", "usar_ia"]);
   });
 
   it("apagar la IA conserva el modelo elegido", async () => {

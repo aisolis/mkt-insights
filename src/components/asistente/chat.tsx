@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CanalChart } from "@/components/dashboard/canal-chart";
 import { SerieChart } from "@/components/dashboard/serie-chart";
 import {
@@ -8,6 +8,8 @@ import {
   type AdjuntoResumen, type CitaAdjunto,
 } from "@/lib/asistente/adjuntos";
 import type { ConversacionResumen, TurnoGuardado, Valoracion } from "@/lib/asistente/conversaciones";
+import { usd } from "@/lib/asistente/dinero";
+import { textoResolucion, type EstadoPresupuesto, type Resolucion } from "@/lib/asistente/presupuesto";
 import { createClient } from "@/lib/supabase/client";
 import type { Respuesta, Visual } from "@/lib/asistente/tipos";
 import { TIPOS, type Cita } from "@/lib/conocimiento/tipos";
@@ -47,6 +49,10 @@ type Props = {
   inicial?: string;
   sugerencias: Sugerencia[];
   conModelo: boolean;
+  /** La app tiene IA disponible ahora (encendida, modelo permitido y sin llegar al tope global). */
+  conIa: boolean;
+  /** Presupuesto de IA del mes de quien pregunta; al agotarse responde el análisis automático y puede pedir más. */
+  presupuesto: EstadoPresupuesto;
   /** Últimas conversaciones del usuario (precargadas en el servidor). */
   conversaciones: ConversacionResumen[];
   /** Conversación del enlace (?c=id), si existe y es del usuario. */
@@ -71,7 +77,10 @@ function fijarUrl(id: string | null, quitarSobre = false) {
   window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
 }
 
-export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerencias, conModelo, conversaciones, abierta, descartada }: Props) {
+export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerencias, conModelo: conModeloInicial, conIa, presupuesto: presupuestoInicial, conversaciones, abierta, descartada }: Props) {
+  // Se actualiza con cada respuesta: la pregunta que agota el presupuesto muestra el aviso sin recargar la página.
+  const [presupuesto, setPresupuesto] = useState(presupuestoInicial);
+  const conModelo = conIa ? !presupuesto.agotado : conModeloInicial;
   const [lista, setLista] = useState(conversaciones);
   const [activa, setActiva] = useState<Activa | null>(abierta && {
     id: abierta.conversacion.id, titulo: abierta.conversacion.titulo, contexto: abierta.conversacion.contexto, contextoTxt: abierta.contextoTxt,
@@ -105,9 +114,10 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
         body: JSON.stringify(actual ? { pregunta, conversacionId: actual.id } : { pregunta, contexto }),
       });
       const json = await res.json();
-      const { conversacionId, preguntas: n, conversacion, turnoId, ...resto } = json as {
-        conversacionId?: string; preguntas?: number; conversacion?: ConversacionResumen; turnoId?: number | null; error?: string;
+      const { conversacionId, preguntas: n, conversacion, turnoId, presupuesto: p, ...resto } = json as {
+        conversacionId?: string; preguntas?: number; conversacion?: ConversacionResumen; turnoId?: number | null; error?: string; presupuesto?: EstadoPresupuesto;
       };
+      if (p) setPresupuesto(p);
       if (conversacion) ponerEnLista(conversacion);
       // Una conversación que empezó con un adjunto recibe su título con la primera pregunta.
       if (conversacion && actual) setActiva((a) => (a?.id === conversacion.id ? { ...a, titulo: conversacion.titulo } : a));
@@ -281,10 +291,21 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
   const pie = (
     <p className="flex items-center justify-center gap-1.5 text-center text-xs text-neutral-500">
       <IconoEscudo className="size-3.5 shrink-0" />
-      {conModelo ? "Las cifras salen de consultas a la versión publicada y se verifican antes de mostrarse." : "Sin modelo de IA configurado: responde el análisis automático por reglas."}
+      {conModelo ? "Las cifras salen de consultas a la versión publicada y se verifican antes de mostrarse."
+        : conIa ? "Sin presupuesto de IA este mes: responde el análisis automático por reglas."
+        : "Sin modelo de IA configurado: responde el análisis automático por reglas."}
+      {conModelo && pocoPresupuesto(presupuesto) && ` Te quedan ${usd(presupuesto.restanteUsd ?? 0)} de tu presupuesto de IA de este mes.`}
       {" "}No se envían datos de clientes a la IA.
       {adjuntos.length > 0 && " Lo que adjuntas sí se envía a la IA: no subas datos personales de clientes."}
     </p>
+  );
+  // Solo si es el presupuesto de la persona lo que dejó la pregunta sin IA (con la IA apagada o el tope global no aplica).
+  // Arriba, cómo se resolvió su última solicitud (con la nota de quien la revisó), salvo que ya haya otra en espera.
+  const avisoPresupuesto = (
+    <>
+      {presupuesto.resolucion && !presupuesto.pendiente && <div className="mb-2"><ResolucionAmpliacion r={presupuesto.resolucion} /></div>}
+      {conIa && presupuesto.agotado && <div className="mb-2"><SinPresupuesto presupuesto={presupuesto} onCambio={setPresupuesto} /></div>}
+    </>
   );
   const cajaAdjuntos = { texto: borrador, setTexto: setBorrador, adjuntos, subiendo, aviso: avisoAdjunto, onAdjuntar: (f: File) => void adjuntar(f), onQuitar: (a: AdjuntoVista) => void quitarAdjunto(a) };
   const panel = (
@@ -317,6 +338,7 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
               <h1 className="text-center text-4xl font-semibold tracking-tight text-neutral-900">Hola, {nombre}</h1>
               <p className="mt-2 text-center text-lg text-neutral-600">¿Qué quieres saber de la venta?</p>
               <div className="mt-8 w-full max-w-3xl">
+                {avisoPresupuesto}
                 <Caja grande onPreguntar={preguntar} enviando={enviando} chip={chip} {...cajaAdjuntos} />
               </div>
               <div className="mt-6 grid w-full max-w-5xl gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -388,6 +410,7 @@ export function Chat({ nombre, contexto, contextoTxt, version, inicial, sugerenc
                   </button>
                 </div>
               )}
+              {avisoPresupuesto}
               <Caja onPreguntar={preguntar} enviando={enviando || cargando} chip={chip} {...cajaAdjuntos} />
               {pie}
             </div>
@@ -494,6 +517,111 @@ function Caja({ grande, onPreguntar, enviando, chip, texto, setTexto, adjuntos, 
   );
 }
 
+/** Queda la quinta parte o menos del presupuesto del mes: se avisa antes de que se acabe. */
+const pocoPresupuesto = (p: EstadoPresupuesto) => p.limiteUsd !== null && p.restanteUsd !== null && p.restanteUsd <= p.limiteUsd * 0.2;
+
+const CLAVE_RESOLUCION = "bia:ampliacion-vista";
+const oyentesResolucion = new Set<() => void>();
+/** Id de la última resolución que la persona ya cerró en este navegador (null si ninguna o sin almacenamiento). */
+function resolucionVista(): string | null {
+  try {
+    return window.localStorage.getItem(CLAVE_RESOLUCION);
+  } catch {
+    return null;
+  }
+}
+function suscribirResolucion(avisar: () => void) {
+  oyentesResolucion.add(avisar);
+  window.addEventListener("storage", avisar);
+  return () => { oyentesResolucion.delete(avisar); window.removeEventListener("storage", avisar); };
+}
+
+/**
+ * Cómo se resolvió la última solicitud de ampliación de la persona, con la nota de quien la revisó. Se queda hasta
+ * que la cierra (se recuerda en el navegador): es la única forma en que se entera de la respuesta.
+ */
+function ResolucionAmpliacion({ r }: { r: Resolucion }) {
+  // En el servidor no se sabe si ya la cerró: se pinta después de leer el navegador, para no mostrarla y quitarla.
+  const vista = useSyncExternalStore(suscribirResolucion, resolucionVista, () => String(r.id));
+  if (vista === String(r.id)) return null;
+  const aprobada = r.estado === "aprobada";
+  const cerrar = () => {
+    try { window.localStorage.setItem(CLAVE_RESOLUCION, String(r.id)); } catch { /* sin almacenamiento: se cierra solo en esta vista */ }
+    oyentesResolucion.forEach((f) => f());
+  };
+  return (
+    <div role="status" className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-xs ${aprobada ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-neutral-200 bg-neutral-100 text-neutral-800"}`}>
+      <p className="min-w-0">{textoResolucion(r)}</p>
+      <button type="button" onClick={cerrar} aria-label="Cerrar este aviso" className="grid size-5 shrink-0 place-items-center rounded-full hover:bg-black/10">
+        <IconoCerrar className="size-3" />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Aviso de presupuesto de IA agotado, con la solicitud de ampliación: la persona explica para qué la necesita (opcional)
+ * y un admin la aprueba o la rechaza. Mientras tanto el asistente sigue respondiendo con el análisis automático.
+ */
+function SinPresupuesto({ presupuesto, onCambio }: { presupuesto: EstadoPresupuesto; onCambio: (p: EstadoPresupuesto) => void }) {
+  const [abierto, setAbierto] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function enviar() {
+    setEnviando(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/asistente/ampliacion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ motivo }) });
+      const json = (await res.json()) as { presupuesto?: EstadoPresupuesto; error?: string };
+      if (res.ok && json.presupuesto) { onCambio(json.presupuesto); setAbierto(false); }
+      else setError(json.error ?? "No se pudo enviar la solicitud.");
+    } catch {
+      setError("No se pudo contactar al servidor.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="flex min-w-0 items-start gap-2">
+          <IconoAlerta className="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            Usaste tu presupuesto de IA de este mes ({usd(presupuesto.gastoUsd)} de {usd(presupuesto.limiteUsd ?? 0)}). Puedes seguir preguntando: responde el
+            análisis automático por reglas, con las mismas cifras.
+            {presupuesto.pendiente && " Tu solicitud de ampliación está pendiente de que la revise un administrador."}
+          </span>
+        </p>
+        {!presupuesto.pendiente && !abierto && (
+          <button type="button" onClick={() => setAbierto(true)} className="shrink-0 rounded-full bg-neutral-900 px-3 py-1 font-medium text-white hover:bg-neutral-700">
+            Pedir ampliación
+          </button>
+        )}
+      </div>
+      {abierto && !presupuesto.pendiente && (
+        <form onSubmit={(e) => { e.preventDefault(); void enviar(); }} className="space-y-2">
+          <label className="block space-y-1">
+            <span>¿Para qué la necesitas? (opcional; lo lee quien la aprueba)</span>
+            <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} maxLength={500} rows={2}
+              placeholder="P. ej. cierre de mes: me faltan los análisis por canal."
+              className="w-full resize-none rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-sm text-neutral-900 outline-none focus:border-neutral-500" />
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="submit" disabled={enviando} className="rounded-full bg-neutral-900 px-3 py-1 font-medium text-white hover:bg-neutral-700 disabled:opacity-50">
+              {enviando ? "Enviando…" : "Enviar solicitud"}
+            </button>
+            <button type="button" onClick={() => setAbierto(false)} className="rounded-full px-3 py-1 font-medium hover:bg-amber-100">Cancelar</button>
+            {error && <span role="alert" className="text-red-700">{error}</span>}
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
 const ESTADO_ADJUNTO: Record<AdjuntoResumen["estado"], string> = { subiendo: "Subiendo…", procesando: "Leyendo…", listo: "", error: "No se pudo usar" };
 
 /** Un adjunto de la conversación junto a la caja: nombre, estado y quitar. */
@@ -558,7 +686,8 @@ export function RespuestaVista({ r }: { r: Respuesta }) {
 
       {(r.hechos.length > 0 || r.hipotesis.length > 0) && (
         <div className="grid gap-3 md:grid-cols-2">
-          <Lista titulo="Hechos comprobados" items={r.hechos} punto="bg-emerald-500" />
+          <Lista titulo="Hechos comprobados" items={r.hechos} punto="bg-emerald-500"
+            vacio={r.adjuntos?.length ? "Esta respuesta no consultó los datos de venta: sale de tus adjuntos." : "Esta respuesta no consultó los datos de venta."} />
           <Lista titulo="Hipótesis a validar" items={r.hipotesis} punto="bg-amber-500" vacio="Sin hipótesis: la pregunta se responde con los datos." />
         </div>
       )}

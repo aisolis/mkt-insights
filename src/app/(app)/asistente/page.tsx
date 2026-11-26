@@ -4,6 +4,7 @@ import { describirFiltros, rango } from "@/lib/asistente/texto";
 import { capital } from "@/lib/format";
 import { listarAdjuntos } from "@/lib/asistente/adjuntos-servidor";
 import { modeloParaPregunta } from "@/lib/asistente/config-servidor";
+import { presupuestoDe } from "@/lib/asistente/presupuesto-servidor";
 import { cargarTurnos, contextoEnPalabras, listarConversaciones, obtenerConversacion } from "@/lib/asistente/conversaciones";
 import { versionVigente } from "@/lib/semantic/queries";
 import type { VersionVigente } from "@/lib/semantic/contracts";
@@ -45,6 +46,8 @@ export default async function Asistente(props: PageProps<"/asistente">) {
   const usuario = await requerirAcceso(); // el layout no se vuelve a ejecutar en cada navegación
   // Lo que no depende de la versión arranca ya (antes iba después, en serie): la lista y el modelo del asistente.
   const conversacionesP = listarConversaciones().catch((e) => { console.error("asistente:", e); return []; });
+  // La decisión global (tope de la app, modelo permitido) y el presupuesto de IA de la persona.
+  const presupuestoP = presupuestoDe(usuario.id);
   const modeloP = modeloParaPregunta();
   modeloP.catch(() => {}); // sin versión publicada no se espera: que no quede como rechazo sin manejar
   const [version, sp] = await Promise.all([versionP, props.searchParams]);
@@ -55,10 +58,11 @@ export default async function Asistente(props: PageProps<"/asistente">) {
   const cmp = periodoComparado(estado.periodo, estado.comparar);
   const c = typeof sp.c === "string" ? sp.c : undefined;
   // Si la lista o la conversación no cargan, el asistente sigue funcionando: se empieza una conversación nueva.
-  const [conversaciones, abierta, modelo] = await Promise.all([
+  const [conversaciones, abierta, modeloGlobal, presupuesto] = await Promise.all([
     conversacionesP,
     c ? conversacionDelEnlace(c, version, usuario.id).catch((e) => { console.error("asistente:", e); return null; }) : null,
     modeloP,
+    presupuestoP, // si no se puede leer, cuenta como sin límite
   ]);
   // Con una conversación abierta no se reenvía la pregunta sugerida (?sobre=): ya se hizo al crearla.
   const sobre = !abierta && typeof sp.sobre === "string" ? SOBRE[sp.sobre]?.(estado.periodo.anio) : undefined;
@@ -74,7 +78,10 @@ export default async function Asistente(props: PageProps<"/asistente">) {
       version={version.version}
       inicial={sobre}
       // Con el tope de gasto alcanzado o un modelo no permitido responde el análisis automático (G9).
-      conModelo={modelo.modelo !== null}
+      // Sin presupuesto de IA también responde el automático; el chat ofrece pedir una ampliación.
+      conModelo={modeloGlobal.modelo !== null && !presupuesto.agotado}
+      conIa={modeloGlobal.modelo !== null}
+      presupuesto={presupuesto}
       sugerencias={SUGERENCIAS}
       conversaciones={conversaciones}
       abierta={abierta}

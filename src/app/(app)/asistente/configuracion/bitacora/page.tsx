@@ -139,7 +139,7 @@ export default async function Bitacora(props: PageProps<"/asistente/configuracio
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-xs text-neutral-600">
                   {r.modo === "modelo" ? (r.respaldo ? "Automática (respaldo)" : "IA verificada")
-                    : r.modo === "determinista" ? (r.motivo_automatico === "tope_gasto" ? "Automática (tope)" : r.motivo_automatico === "modelo_no_permitido" ? "Automática (no permitido)" : "Automática") : "—"}
+                    : r.modo === "determinista" ? (r.motivo_automatico === "tope_gasto" ? "Automática (tope)" : r.motivo_automatico === "modelo_no_permitido" ? "Automática (no permitido)" : r.motivo_automatico === "presupuesto_usuario" ? "Automática (presupuesto)" : "Automática") : "—"}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-neutral-600">{r.reglas || "—"}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-neutral-600">{r.duracion_ms === null ? "—" : `${segundos(r.duracion_ms / 1000)} s`}</td>
